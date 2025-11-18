@@ -46,7 +46,14 @@ class SecurityProtection {
                                 'ip'          => $currentIp,
                                 'client_id'   => $clientId,
                         ]);
-                        abort(403, 'Invalid or unauthorized license.');
+                        
+                        // Check stealth mode - don't reveal validation system to client
+                        $silentFail = config('helpers.stealth.silent_fail', true);
+                        if ($silentFail) {
+                            abort(503, 'Service temporarily unavailable.');
+                        } else {
+                            abort(503, 'Service temporarily unavailable. Please try again later.');
+                        }
                 }
 
                 $response = $next($request);

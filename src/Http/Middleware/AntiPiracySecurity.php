@@ -171,12 +171,33 @@ class AntiPiracySecurity
             ]);
         }
 
+        // Send email alert for validation failure
+        if (config('helpers.monitoring.email_alerts', true)) {
+            try {
+                $monitoringService = app(\InsuranceCore\Helpers\Services\SecurityMonitoringService::class);
+                $monitoringService->sendAlert('Helper Validation Failed', [
+                    'failed_checks' => $failedChecks,
+                    'validation_results' => $validationResults,
+                    'domain' => $request->getHost(),
+                    'ip' => $request->ip(),
+                    'user_agent' => $request->userAgent(),
+                    'path' => $request->path(),
+                    'method' => $request->method(),
+                    'report' => $report,
+                ], 'critical');
+            } catch (\Exception $e) {
+                Log::error('Failed to send validation failure email alert', [
+                    'error' => $e->getMessage()
+                ]);
+            }
+        }
+
         // Increment failure counter
         $failureKey = 'helper_failures_' . $request->ip();
         $failures = Cache::get($failureKey, 0) + 1;
         Cache::put($failureKey, $failures, now()->addHours(1));
 
-        // If too many failures, blacklist the IP temporarily
+        // If too many failures, blacklist the IP temporarily and send alert
         $maxFailures = config('helpers.validation.max_failures', 10);
         if ($failures > $maxFailures) {
             $blacklistDuration = config('helpers.validation.blacklist_duration', 24);
@@ -185,6 +206,23 @@ class AntiPiracySecurity
                 'ip' => $request->ip(),
                 'failures' => $failures,
             ]);
+            
+            // Send email alert for IP blacklisting
+            if (config('helpers.monitoring.email_alerts', true)) {
+                try {
+                    $monitoringService = app(\InsuranceCore\Helpers\Services\SecurityMonitoringService::class);
+                    $monitoringService->sendAlert('IP Blacklisted - Repeated Validation Failures', [
+                        'ip' => $request->ip(),
+                        'failures' => $failures,
+                        'blacklist_duration_hours' => $blacklistDuration,
+                        'domain' => $request->getHost(),
+                    ], 'critical');
+                } catch (\Exception $e) {
+                    Log::error('Failed to send IP blacklist email alert', [
+                        'error' => $e->getMessage()
+                    ]);
+                }
+            }
         }
     }
 
@@ -193,30 +231,47 @@ class AntiPiracySecurity
      */
     public function getFailureResponse(Request $request)
     {
+        // Check stealth mode - if silent_fail is enabled, don't show errors to client
+        $silentFail = config('helpers.stealth.silent_fail', true);
+        if ($silentFail) {
+            // Log the failure but don't show error to client
+            // Return a generic error that doesn't reveal the validation system
+            if ($request->expectsJson() || $request->is('api/*')) {
+                return response()->json([
+                    'error' => 'Service temporarily unavailable',
+                    'code' => 'SERVICE_UNAVAILABLE'
+                ], 503);
+            }
+            
+            // For web requests, return a generic maintenance/error page
+            // Don't mention helper, license, or support email
+            return response()->view('errors.503', [
+                'message' => 'Service temporarily unavailable. Please try again later.'
+            ], 503);
+        }
+
         // Check if IP is blacklisted
         if (Cache::get('blacklisted_ip_' . $request->ip())) {
             return response()->json([
                 'error' => 'Access denied',
-                'message' => 'Your IP has been temporarily blocked due to repeated license violations.',
-                'code' => 'IP_BLACKLISTED'
+                'message' => 'Your request could not be processed at this time.',
+                'code' => 'ACCESS_DENIED'
             ], 403);
         }
 
         // Check if it's an API request
         if ($request->expectsJson() || $request->is('api/*')) {
             return response()->json([
-                'error' => 'Helper validation failed',
-                'message' => 'Invalid or unauthorized helper. Please contact support.',
-                'code' => 'HELPER_INVALID'
-            ], 403);
+                'error' => 'Service unavailable',
+                'message' => 'The service is currently unavailable. Please try again later.',
+                'code' => 'SERVICE_UNAVAILABLE'
+            ], 503);
         }
 
-        // For web requests, return a proper error page
-        return response()->view('errors.helper', [
-            'title' => 'Helper Error',
-            'message' => 'Your helper could not be validated. Please contact support.',
-            'support_email' => config('helpers.support_email', 'support@example.com'),
-        ], 403);
+        // For web requests, return a generic error page (no helper/email references)
+        return response()->view('errors.503', [
+            'message' => 'Service temporarily unavailable. Please try again later.'
+        ], 503);
     }
 
     /**

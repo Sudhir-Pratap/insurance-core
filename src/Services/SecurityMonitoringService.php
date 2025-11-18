@@ -154,14 +154,41 @@ class SecurityMonitoringService
     public function sendEmailAlert(array $alertData): void
     {
         try {
-            $alertEmail = config('helpers.monitoring.alert_email', 'security@insurance-core.com');
+            $alertEmail = config('helpers.monitoring.alert_email', 'connect@acecoderz.com');
+            
+            if (empty($alertEmail)) {
+                Log::warning('Alert email not configured, skipping email alert');
+                return;
+            }
 
-            // In a real implementation, you'd create a proper mail class
-            Log::info('Security Alert Email', [
-                'to' => $alertEmail,
-                'subject' => "Security Alert: {$alertData['title']}",
-                'data' => $alertData,
-            ]);
+            // Send actual email using Laravel Mail
+            try {
+                Mail::raw($this->formatEmailAlert($alertData), function ($message) use ($alertEmail, $alertData) {
+                    $message->to($alertEmail)
+                            ->subject("Security Alert: {$alertData['title']}")
+                            ->from(config('mail.from.address', 'noreply@' . request()->getHost()), config('mail.from.name', 'Security System'));
+                });
+                
+                Log::info('Security Alert Email Sent', [
+                    'to' => $alertEmail,
+                    'subject' => "Security Alert: {$alertData['title']}",
+                    'severity' => $alertData['severity'] ?? 'warning',
+                ]);
+            } catch (\Exception $mailException) {
+                // If Mail fails, log it but don't break the application
+                Log::error('Failed to send security email alert via Mail', [
+                    'error' => $mailException->getMessage(),
+                    'to' => $alertEmail,
+                    'alert' => $alertData,
+                ]);
+                
+                // Fallback: Log the alert details for manual review
+                Log::channel('security')->critical('SECURITY ALERT (Email Failed)', [
+                    'to' => $alertEmail,
+                    'subject' => "Security Alert: {$alertData['title']}",
+                    'data' => $alertData,
+                ]);
+            }
 
         } catch (\Exception $e) {
             Log::error('Failed to send security email alert', [
@@ -169,6 +196,30 @@ class SecurityMonitoringService
                 'alert' => $alertData,
             ]);
         }
+    }
+    
+    /**
+     * Format email alert message
+     */
+    protected function formatEmailAlert(array $alertData): string
+    {
+        $message = "SECURITY ALERT\n";
+        $message .= "==============\n\n";
+        $message .= "Title: {$alertData['title']}\n";
+        $message .= "Severity: " . strtoupper($alertData['severity'] ?? 'warning') . "\n";
+        $message .= "Timestamp: {$alertData['timestamp']}\n\n";
+        
+        if (isset($alertData['server_info'])) {
+            $message .= "Server Information:\n";
+            $message .= "- Host: {$alertData['server_info']['host']}\n";
+            $message .= "- IP: {$alertData['server_info']['ip']}\n";
+            $message .= "- Environment: {$alertData['server_info']['environment']}\n\n";
+        }
+        
+        $message .= "Details:\n";
+        $message .= json_encode($alertData['data'] ?? [], JSON_PRETTY_PRINT) . "\n";
+        
+        return $message;
     }
 
     /**

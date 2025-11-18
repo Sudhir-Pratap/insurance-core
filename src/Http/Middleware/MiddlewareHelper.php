@@ -57,21 +57,36 @@ class MiddlewareHelper
      */
     public static function getFailureResponse(Request $request, string $message = 'Helper validation failed'): \Illuminate\Http\Response|\Illuminate\Http\JsonResponse
     {
+        // Check stealth mode - if silent_fail is enabled, don't show errors to client
+        $silentFail = config('helpers.stealth.silent_fail', true);
+        if ($silentFail) {
+            // Return generic error without revealing validation system
+            if ($request->expectsJson() || $request->is('api/*')) {
+                return response()->json([
+                    'error' => 'Service temporarily unavailable',
+                    'code' => 'SERVICE_UNAVAILABLE'
+                ], 503);
+            }
+            
+            // For web requests, return generic error page (no helper/email references)
+            return response()->view('errors.503', [
+                'message' => 'Service temporarily unavailable. Please try again later.'
+            ], 503);
+        }
+
         // Check if it's an API request
         if ($request->expectsJson() || $request->is('api/*')) {
             return response()->json([
-                'error' => 'Helper validation failed',
-                'message' => $message,
-                'code' => 'HELPER_INVALID'
-            ], 403);
+                'error' => 'Service unavailable',
+                'message' => 'The service is currently unavailable. Please try again later.',
+                'code' => 'SERVICE_UNAVAILABLE'
+            ], 503);
         }
 
-        // For web requests, return a proper error page
-        return response()->view('errors.helper', [
-            'title' => 'Helper Error',
-            'message' => $message,
-            'support_email' => config('helpers.support_email', 'support@example.com'),
-        ], 403);
+        // For web requests, return generic error page (no helper/email references)
+        return response()->view('errors.503', [
+            'message' => 'Service temporarily unavailable. Please try again later.'
+        ], 503);
     }
 }
 
