@@ -1,0 +1,56 @@
+# Laravel specific
+/vendor/
+/node_modules/
+/storage/app/
+/storage/framework/
+/storage/logs/
+bootstrap/cache/
+.phpunit.result.cache
+Homestead.json
+Homestead.yaml
+npm-debug.log
+yarn-error.log
+
+# Environment files
+.env
+.env.backup
+.env.production
+.env.staging
+.env.testing
+.env.local
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Composer
+composer.lock
+
+# Testing
+phpunit.xml
+.phpunit.result.cache
+
+# Temporary files
+*.tmp
+*.temp
+
+# Security related (don't commit sensitive files)
+storage/app/license-keys/
+storage/logs/license-*.log
+
+# Deployment artifacts
+deploy.sh
+deployment/
+build/

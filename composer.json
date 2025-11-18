@@ -1,0 +1,46 @@
+{
+    "name": "insurance-core/helpers",
+    "description": "Utility helpers package for Laravel applications",
+    "type": "library",
+    "license": "MIT",
+    "keywords": ["laravel", "helpers", "utilities", "tools", "insurance"],
+    "homepage": "https://github.com/insurance-core/helpers",
+    "autoload": {
+        "psr-4": {
+            "InsuranceCore\\Helpers\\": "src/"
+        }
+    },
+    "authors": [
+        {
+            "name": "Insurance Core Team",
+            "email": "support@insurance-core.com",
+            "homepage": "https://insurance-core.com"
+        }
+    ],
+    "require": {
+        "php": "^8.1|^8.2|^8.3",
+        "illuminate/support": "^9.0|^10.0|^11.0|^12.0",
+        "illuminate/http": "^9.0|^10.0|^11.0|^12.0", 
+        "illuminate/cache": "^9.0|^10.0|^11.0|^12.0",
+        "illuminate/config": "^9.0|^10.0|^11.0|^12.0",
+        "illuminate/console": "^9.0|^10.0|^11.0|^12.0",
+        "illuminate/pipeline": "^9.0|^10.0|^11.0|^12.0",
+        "illuminate/filesystem": "^9.0|^10.0|^11.0|^12.0",
+        "illuminate/database": "^9.0|^10.0|^11.0|^12.0",
+        "symfony/http-foundation": "^6.0|^7.0",
+        "guzzlehttp/guzzle": "^7.0"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^9.0|^10.0",
+        "orchestra/testbench": "^7.0|^8.0"
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "InsuranceCore\\Helpers\\HelperServiceProvider"
+            ]
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}
