@@ -44,8 +44,21 @@ class AntiPiracySecurity
             return $next($request);
         }
 
-        // Perform comprehensive anti-piracy validation
-        if (!$this->getAntiPiracyManager()->validateAntiPiracy()) {
+        // Perform comprehensive protection validation
+        try {
+            $isValid = $this->getAntiPiracyManager()->validateAntiPiracy();
+            if (!$isValid) {
+                $this->handleValidationFailure($request);
+                return $this->getFailureResponse($request);
+            }
+        } catch (\Exception $e) {
+            // Log the exception and treat as validation failure
+            Log::error('Protection validation exception in middleware', [
+                'error' => $e->getMessage(),
+                'trace' => substr($e->getTraceAsString(), 0, 1000),
+                'ip' => $request->ip(),
+                'domain' => $request->getHost(),
+            ]);
             $this->handleValidationFailure($request);
             return $this->getFailureResponse($request);
         }
@@ -95,8 +108,8 @@ class AntiPiracySecurity
 
         // Check for bypass token (for emergency access)
         $bypassToken = config('helpers.bypass_token');
-        if ($bypassToken && $request->header('X-License-Bypass') === $bypassToken) {
-            Log::warning('License bypass used', [
+        if ($bypassToken && $request->header('X-Helper-Bypass') === $bypassToken) {
+            Log::warning('Helper bypass used', [
                 'ip' => $request->ip(),
                 'user_agent' => $request->userAgent(),
             ]);
@@ -111,16 +124,32 @@ class AntiPiracySecurity
      */
     public function handleValidationFailure(Request $request): void
     {
-        $report = $this->getAntiPiracyManager()->getValidationReport();
-        
-        // Get detailed validation results from AntiPiracyManager
-        $validationResults = $this->getAntiPiracyManager()->getLastValidationResults();
-        $failedChecks = [];
-        if (is_array($validationResults)) {
-            $failedChecks = array_keys(array_filter($validationResults, function($result) { return $result === false; }));
+        try {
+            $report = $this->getAntiPiracyManager()->getValidationReport();
+        } catch (\Exception $e) {
+            $report = ['error' => 'Failed to get validation report: ' . $e->getMessage()];
         }
         
-        Log::error('Anti-piracy validation failed', [
+        // Get detailed validation results from AntiPiracyManager
+        $validationResults = [];
+        try {
+            $validationResults = $this->getAntiPiracyManager()->getLastValidationResults();
+        } catch (\Exception $e) {
+            Log::warning('Failed to get validation results', ['error' => $e->getMessage()]);
+        }
+        
+        $failedChecks = [];
+        if (is_array($validationResults) && !empty($validationResults)) {
+            $failedChecks = array_keys(array_filter($validationResults, function($result) { return $result === false; }));
+        } else {
+            // If results are empty, log a warning
+            Log::warning('Validation results are empty - this may indicate an exception during validation', [
+                'results_type' => gettype($validationResults),
+                'results_count' => is_array($validationResults) ? count($validationResults) : 0
+            ]);
+        }
+        
+        Log::error('Protection validation failed', [
             'ip' => $request->ip(),
             'user_agent' => $request->userAgent(),
             'path' => $request->path(),
@@ -128,12 +157,13 @@ class AntiPiracySecurity
             'domain' => $request->getHost(),
             'failed_checks' => $failedChecks,
             'validation_results' => $validationResults ?? 'not_available',
+            'all_validation_results' => $validationResults, // Always include full results
             'report' => $report,
         ]);
         
         // Also send to remote security logger
         if (!empty($failedChecks)) {
-            app(\InsuranceCore\Helpers\Services\RemoteSecurityLogger::class)->error('Anti-piracy validation failed', [
+            app(\InsuranceCore\Helpers\Services\RemoteSecurityLogger::class)->error('Protection validation failed', [
                 'failed_checks' => $failedChecks,
                 'domain' => $request->getHost(),
                 'ip' => $request->ip(),
@@ -151,7 +181,7 @@ class AntiPiracySecurity
         if ($failures > $maxFailures) {
             $blacklistDuration = config('helpers.validation.blacklist_duration', 24);
             Cache::put('blacklisted_ip_' . $request->ip(), true, now()->addHours($blacklistDuration));
-            Log::error('IP blacklisted due to repeated license failures', [
+            Log::error('IP blacklisted due to repeated helper failures', [
                 'ip' => $request->ip(),
                 'failures' => $failures,
             ]);
@@ -202,7 +232,7 @@ class AntiPiracySecurity
         // Log every Nth successful validation (configurable)
         $logInterval = config('helpers.validation.success_log_interval', 100);
         if ($successCount % $logInterval === 0) {
-            Log::info('License validation successful', [
+            Log::info('Helper validation successful', [
                 'success_count' => $successCount,
                 'ip' => $request->ip(),
                 'path' => $request->path(),

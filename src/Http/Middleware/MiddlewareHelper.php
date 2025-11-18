@@ -7,7 +7,7 @@ use Illuminate\Http\Request;
 class MiddlewareHelper
 {
     /**
-     * Check if request should skip license validation
+     * Check if request should skip helper validation
      */
     public static function shouldSkipValidation(Request $request): bool
     {
@@ -45,7 +45,7 @@ class MiddlewareHelper
 
         // Check for bypass token
         $bypassToken = config('helpers.bypass_token');
-        if ($bypassToken && $request->header('X-License-Bypass') === $bypassToken) {
+        if ($bypassToken && $request->header('X-Helper-Bypass') === $bypassToken) {
             return true;
         }
 
@@ -55,20 +55,20 @@ class MiddlewareHelper
     /**
      * Get appropriate error response based on request type
      */
-    public static function getFailureResponse(Request $request, string $message = 'License validation failed'): \Illuminate\Http\Response|\Illuminate\Http\JsonResponse
+    public static function getFailureResponse(Request $request, string $message = 'Helper validation failed'): \Illuminate\Http\Response|\Illuminate\Http\JsonResponse
     {
         // Check if it's an API request
         if ($request->expectsJson() || $request->is('api/*')) {
             return response()->json([
-                'error' => 'License validation failed',
+                'error' => 'Helper validation failed',
                 'message' => $message,
-                'code' => 'LICENSE_INVALID'
+                'code' => 'HELPER_INVALID'
             ], 403);
         }
 
         // For web requests, return a proper error page
-        return response()->view('errors.license', [
-            'title' => 'License Error',
+        return response()->view('errors.helper', [
+            'title' => 'Helper Error',
             'message' => $message,
             'support_email' => config('helpers.support_email', 'support@example.com'),
         ], 403);

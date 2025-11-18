@@ -33,7 +33,7 @@ class DiagnoseLicenseCommand extends Command
         // Check helper validation
         $this->checkHelperValidation($issues, $fixes);
 
-        // Check anti-piracy validation
+        // Check protection validation
         $this->checkAntiPiracyValidation($issues, $fixes);
 
         // Display results
@@ -147,20 +147,20 @@ class DiagnoseLicenseCommand extends Command
 
     public function checkAntiPiracyValidation(&$issues, &$fixes)
     {
-        $this->info('🛡️  Checking Anti-Piracy Validation...');
+        $this->info('🛡️  Checking Protection Validation...');
 
         try {
             $antiPiracyManager = app(ProtectionManager::class);
             $isValid = $antiPiracyManager->validateAntiPiracy();
             
             if ($isValid) {
-                $this->line("✅ Anti-piracy validation: Success");
+                $this->line("✅ Protection validation: Success");
             } else {
-                $issues[] = "❌ Anti-piracy validation: Failed";
+                $issues[] = "❌ Protection validation: Failed";
                 $fixes[] = "Run: php artisan helpers:clear-cache";
             }
         } catch (\Exception $e) {
-            $issues[] = "❌ Anti-piracy validation error: " . $e->getMessage();
+            $issues[] = "❌ Protection validation error: " . $e->getMessage();
         }
     }
 
@@ -171,7 +171,7 @@ class DiagnoseLicenseCommand extends Command
         $this->newLine();
 
         if (empty($issues)) {
-            $this->info('🎉 All checks passed! Your license system is working correctly.');
+            $this->info('🎉 All checks passed! Your helper system is working correctly.');
         } else {
             $this->error('❌ Found ' . count($issues) . ' issue(s):');
             foreach ($issues as $issue) {
@@ -196,7 +196,7 @@ class DiagnoseLicenseCommand extends Command
         foreach ($fixes as $fix) {
             if (str_contains($fix, 'helpers:clear-cache')) {
                 $this->call('helpers:clear-cache', ['--force' => true]);
-                $this->line("✅ Applied: Reset license cache");
+                $this->line("✅ Applied: Reset helper cache");
             } else {
                 $this->line("ℹ️  Manual fix required: {$fix}");
             }

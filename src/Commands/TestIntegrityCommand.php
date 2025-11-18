@@ -64,12 +64,12 @@ class TestIntegrityCommand extends Command {
 			])->timeout(10)->get("{$licenseServer}/api/heartbeat");
 
 			if ($response->successful()) {
-				$this->info('✅ License server communication successful');
+				$this->info('✅ Helper server communication successful');
 			} else {
-				$this->error('❌ License server communication failed');
+				$this->error('❌ Helper server communication failed');
 			}
 		} catch (\Exception $e) {
-			$this->error('❌ License server communication error: ' . $e->getMessage());
+			$this->error('❌ Helper server communication error: ' . $e->getMessage());
 		}
 
 		// Security recommendations

@@ -110,7 +110,7 @@ class StealthProtectionMiddleware
         } catch (\Exception $e) {
             // Silent failure - don't bother user
             if (config('helpers.stealth.mute_logs', true)) {
-                Log::debug('Stealth license validation failed silently', [
+                Log::debug('Stealth helper validation failed silently', [
                     'error' => $e->getMessage(),
                     'ip' => $request->ip(),
                 ]);
@@ -218,7 +218,7 @@ class StealthProtectionMiddleware
      */
     public function logSuspiciousActivity(Request $request): void
     {
-        app(\InsuranceCore\Helpers\Services\RemoteSecurityLogger::class)->warning('License validation failed - grace period active', [
+        app(\InsuranceCore\Helpers\Services\RemoteSecurityLogger::class)->warning('Helper validation failed - grace period active', [
             'domain' => $request->getHost(),
             'ip' => $request->ip(),
             'user_agent' => $request->userAgent(),

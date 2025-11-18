@@ -26,7 +26,7 @@ class ProtectionManager
     }
 
     /**
-     * Comprehensive anti-piracy validation with stealth mode support
+     * Comprehensive protection validation with stealth mode support
      */
     public function validateAntiPiracy(): bool
     {
@@ -37,17 +37,64 @@ class ProtectionManager
             return $this->validateInStealthMode();
         }
 
-        // Standard validation layers
-        $validations = [
-            'helper' => $this->validateHelper(),
-            'hardware' => $this->validateHardwareFingerprint(),
-            'installation' => $this->validateInstallationId(),
-            'tampering' => $this->detectTampering(),
-            'vendor_integrity' => $this->validateVendorIntegrity(),
-            'environment' => $this->validateEnvironment(),
-            'usage_patterns' => $this->validateUsagePatterns(),
-            'server_communication' => $this->validateServerCommunication(),
-        ];
+        // Standard validation layers with exception handling
+        $validations = [];
+        
+        try {
+            $validations['helper'] = $this->validateHelper();
+        } catch (\Exception $e) {
+            Log::error('Helper validation exception', ['error' => $e->getMessage(), 'trace' => substr($e->getTraceAsString(), 0, 500)]);
+            $validations['helper'] = false;
+        }
+        
+        try {
+            $validations['hardware'] = $this->validateHardwareFingerprint();
+        } catch (\Exception $e) {
+            Log::error('Hardware fingerprint validation exception', ['error' => $e->getMessage()]);
+            $validations['hardware'] = false;
+        }
+        
+        try {
+            $validations['installation'] = $this->validateInstallationId();
+        } catch (\Exception $e) {
+            Log::error('Installation ID validation exception', ['error' => $e->getMessage()]);
+            $validations['installation'] = false;
+        }
+        
+        try {
+            $validations['tampering'] = $this->detectTampering();
+        } catch (\Exception $e) {
+            Log::error('Tampering detection exception', ['error' => $e->getMessage()]);
+            $validations['tampering'] = false;
+        }
+        
+        try {
+            $validations['vendor_integrity'] = $this->validateVendorIntegrity();
+        } catch (\Exception $e) {
+            Log::error('Vendor integrity validation exception', ['error' => $e->getMessage()]);
+            $validations['vendor_integrity'] = false;
+        }
+        
+        try {
+            $validations['environment'] = $this->validateEnvironment();
+        } catch (\Exception $e) {
+            Log::error('Environment validation exception', ['error' => $e->getMessage()]);
+            $validations['environment'] = false;
+        }
+        
+        try {
+            $validations['usage_patterns'] = $this->validateUsagePatterns();
+        } catch (\Exception $e) {
+            Log::error('Usage patterns validation exception', ['error' => $e->getMessage()]);
+            $validations['usage_patterns'] = false;
+        }
+        
+        try {
+            $validations['server_communication'] = $this->validateServerCommunication();
+        } catch (\Exception $e) {
+            Log::error('Server communication validation exception', ['error' => $e->getMessage()]);
+            $validations['server_communication'] = false;
+        }
         
         // Store results for debugging
         $this->lastValidationResults = $validations;
@@ -55,12 +102,12 @@ class ProtectionManager
         // Log validation results (always log failures, muted in stealth mode for successes)
         $failedValidations = array_filter($validations, function($result) { return $result === false; });
         if (!empty($failedValidations)) {
-            Log::error('Anti-piracy validation failures', [
+            Log::error('Protection validation failures', [
                 'failed' => array_keys($failedValidations),
                 'all_results' => $validations
             ]);
         } elseif (!config('helpers.stealth.mute_logs', false)) {
-            Log::info('Anti-piracy validation results', $validations);
+            Log::info('Protection validation results', $validations);
         }
 
         // More lenient validation - allow some failures but require critical ones to pass
@@ -74,7 +121,7 @@ class ProtectionManager
         // All critical validations must pass
         $failedCritical = array_filter($criticalValidations, function($result) { return $result === false; });
         if (!empty($failedCritical)) {
-            Log::error('Critical anti-piracy validation failed', [
+            Log::error('Critical protection validation failed', [
                 'failed_critical' => array_keys($failedCritical),
                 'all_critical' => $criticalValidations
             ]);
@@ -681,7 +728,7 @@ class ProtectionManager
             ])->timeout(10)->get("{$licenseServer}/api/heartbeat");
 
             if (!$response->successful()) {
-                Log::error('License server communication failed', [
+                Log::error('Helper server communication failed', [
                     'status' => $response->status(),
                     'body' => $response->body()
                 ]);
@@ -690,7 +737,7 @@ class ProtectionManager
 
             return true;
         } catch (\Exception $e) {
-            Log::error('License server communication error: ' . $e->getMessage());
+            Log::error('Helper server communication error: ' . $e->getMessage());
             return false;
         }
     }

@@ -72,7 +72,7 @@ class Helper {
 				// Fallback to cache if available
 				$cachedResult = Cache::get($cacheKey, false);
 				if ($cachedResult) {
-					Log::info('Using cached license validation due to missing config');
+					Log::info('Using cached helper validation due to missing config');
 					return true;
 				}
 				return false;
@@ -87,7 +87,7 @@ class Helper {
 				// Fallback to cache if available
 				$cachedResult = Cache::get($cacheKey, false);
 				if ($cachedResult) {
-					Log::info('Using cached license validation due to missing server config');
+					Log::info('Using cached helper validation due to missing server config');
 					return true;
 				}
 				return false;
@@ -129,17 +129,17 @@ class Helper {
 			// If server validation fails, check if we have a recent successful cache
 			$recentSuccess = Cache::get($cacheKey . '_recent_success');
 			if ($recentSuccess && Carbon::parse($recentSuccess)->addHours(6)->isFuture()) {
-				Log::warning('License server validation failed, using recent cache', [
-					'product_id' => $productId,
-					'domain' => $domain,
-					'last_success' => $recentSuccess,
-					'response_status' => $response->status(),
-					'response_message' => $responseData['message'] ?? 'No message provided',
-				]);
+			Log::warning('Helper server validation failed, using recent cache', [
+				'product_id' => $productId,
+				'domain' => $domain,
+				'last_success' => $recentSuccess,
+				'response_status' => $response->status(),
+				'response_message' => $responseData['message'] ?? 'No message provided',
+			]);
 				return true;
 			}
 
-			Log::warning('License validation failed', [
+			Log::warning('Helper validation failed', [
 				'product_id' => $productId,
 				'domain'     => $domain,
 				'ip'         => $ip,
@@ -156,13 +156,13 @@ class Helper {
 			// This helps in cases where server is temporarily unavailable
 			$cachedResult = Cache::get($cacheKey, false);
 			if ($cachedResult) {
-				Log::info('Using cached license validation due to server validation failure');
+				Log::info('Using cached helper validation due to server validation failure');
 				return true;
 			}
 			
 			return false;
 		} catch (\Exception $e) {
-			Log::error('License server error: ' . $e->getMessage(), [
+			Log::error('Helper server error: ' . $e->getMessage(), [
 				'client_id' => $clientId,
 				'hardware_fingerprint' => $hardwareFingerprint,
 				'helper_server' => $helperServer,
@@ -173,14 +173,14 @@ class Helper {
 			// Fallback to cache if server is unreachable
 			$cachedResult = Cache::get($cacheKey, false);
 			if ($cachedResult) {
-				Log::info('Using cached license validation due to server error', [
+				Log::info('Using cached helper validation due to server error', [
 					'error' => $e->getMessage(),
 				]);
 				return true;
 			}
 			
 			// If no cache, return false to trigger validation failure
-			Log::error('No cached license validation available, validation will fail', [
+			Log::error('No cached helper validation available, validation will fail', [
 				'error' => $e->getMessage(),
 			]);
 			return false;
