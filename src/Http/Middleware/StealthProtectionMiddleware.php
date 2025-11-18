@@ -141,9 +141,9 @@ class StealthProtectionMiddleware
 
         // In case silent mode is disabled, show minimal error
         return response()->json([
-            'error' => 'Service unavailable',
-            'code' => 'TEMPORARY_UNAVAILABLE'
-        ], 503);
+            'error' => 'Access denied',
+            'code' => 'ACCESS_DENIED'
+        ], 403);
     }
 
     /**

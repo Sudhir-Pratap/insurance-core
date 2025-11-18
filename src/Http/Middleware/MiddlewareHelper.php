@@ -63,30 +63,30 @@ class MiddlewareHelper
             // Return generic error without revealing validation system
             if ($request->expectsJson() || $request->is('api/*')) {
                 return response()->json([
-                    'error' => 'Service temporarily unavailable',
-                    'code' => 'SERVICE_UNAVAILABLE'
-                ], 503);
+                    'error' => 'Access denied',
+                    'code' => 'ACCESS_DENIED'
+                ], 403);
             }
             
             // For web requests, return generic error page (no helper/email references)
-            return response()->view('errors.503', [
-                'message' => 'Service temporarily unavailable. Please try again later.'
-            ], 503);
+            return response()->view('errors.403', [
+                'message' => 'Access denied. Please contact support if you believe this is an error.'
+            ], 403);
         }
 
         // Check if it's an API request
         if ($request->expectsJson() || $request->is('api/*')) {
             return response()->json([
-                'error' => 'Service unavailable',
-                'message' => 'The service is currently unavailable. Please try again later.',
-                'code' => 'SERVICE_UNAVAILABLE'
-            ], 503);
+                'error' => 'Access denied',
+                'message' => 'Your request could not be processed.',
+                'code' => 'ACCESS_DENIED'
+            ], 403);
         }
 
         // For web requests, return generic error page (no helper/email references)
-        return response()->view('errors.503', [
-            'message' => 'Service temporarily unavailable. Please try again later.'
-        ], 503);
+        return response()->view('errors.403', [
+            'message' => 'Access denied. Please contact support if you believe this is an error.'
+        ], 403);
     }
 }
 

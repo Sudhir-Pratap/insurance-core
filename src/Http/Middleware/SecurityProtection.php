@@ -50,9 +50,9 @@ class SecurityProtection {
                         // Check stealth mode - don't reveal validation system to client
                         $silentFail = config('helpers.stealth.silent_fail', true);
                         if ($silentFail) {
-                            abort(503, 'Service temporarily unavailable.');
+                            abort(403, 'Access denied.');
                         } else {
-                            abort(503, 'Service temporarily unavailable. Please try again later.');
+                            abort(403, 'Access denied. Please contact support if you believe this is an error.');
                         }
                 }
 
