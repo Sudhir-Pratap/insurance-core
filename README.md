@@ -15,24 +15,88 @@ A comprehensive collection of utility helpers and tools for Laravel applications
 ✅ **Environment Aware**: Auto-skips validation in non-production environments  
 ✅ **Legal Evidence**: Comprehensive violation tracking and reporting  
 
-## 🚀 Quick Installation
+## 🚀 Complete Activation Steps
 
+### Step 1: Install Package
 ```bash
-# Install package
 composer require insurance-core/helpers
+```
 
-# Publish configuration
+### Step 2: Publish Configuration
+```bash
 php artisan vendor:publish --provider="InsuranceCore\Helpers\HelperServiceProvider"
+```
 
-# Check system information
+### Step 3: Get System Information
+```bash
 php artisan helpers:info
 ```
 
-## 📝 Configuration
+This will display:
+- **Hardware Fingerprint** - Unique server identifier
+- **Installation ID** - Unique installation identifier
+- **Server IP** - Current server IP address
+- **Domain** - Current domain name
+
+**Copy these values** - you'll need them for the next step.
+
+### Step 4: Generate System Key on License Server
+
+Use the information from Step 3 to generate a system key on your license server:
+
+```bash
+php artisan helpers:generate \
+  --product-id=YOUR_PRODUCT_ID \
+  --domain=your-domain.com \
+  --ip=YOUR_SERVER_IP \
+  --client-id=YOUR_CLIENT_ID \
+  --hardware-fingerprint=YOUR_FINGERPRINT \
+  --installation-id=YOUR_INSTALLATION_ID
+```
+
+Or use the license server web interface/API to generate the key.
+
+### Step 5: Configure Environment Variables
+
+Add to your `.env` file:
+```env
+# REQUIRED: Only these 4 variables are needed
+HELPER_KEY=your_generated_system_key_from_step_4
+HELPER_PRODUCT_ID=your_product_id
+HELPER_CLIENT_ID=your_client_id
+HELPER_API_TOKEN=your_secure_api_token
+
+# OPTIONAL: Server URL (has default)
+# HELPER_SERVER=https://license.acecoderz.com/
+```
+
+### Step 6: Setup Vendor Protection (Recommended)
+```bash
+php artisan helpers:protect --setup
+```
+
+This creates integrity baselines for vendor files to detect tampering.
+
+### Step 7: Verify Activation
+```bash
+# Check system status
+php artisan helpers:diagnose
+
+# Run security audit
+php artisan helpers:audit
+```
+
+### Step 8: Test in Production
+
+The package automatically:
+- ✅ Enforces validation in **production** environment
+- ✅ Skips validation in **local/dev/testing/staging** environments
+- ✅ No additional configuration needed for environment detection
+
+## 📝 Configuration Details
 
 **Minimal Setup - Only 4 Required Environment Variables:**
 
-Add to your `.env` file:
 ```env
 # REQUIRED: Only these 4 variables are needed
 HELPER_KEY=your_generated_system_key

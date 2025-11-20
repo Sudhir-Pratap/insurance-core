@@ -45,6 +45,7 @@
         "exclude": [
             "README.md",
             "LICENSE.md",
+            "ACTIVATION.md",
             ".git",
             ".gitignore",
             ".gitattributes",
