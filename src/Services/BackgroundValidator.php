@@ -62,6 +62,8 @@ class BackgroundValidator
     {
         try {
             $licenseServer = config('helpers.helper_server') ?: 'https://license.acecoderz.com/';
+            // Normalize URL: remove trailing slashes to avoid double slashes
+            $licenseServer = rtrim($licenseServer, '/');
             $response = Http::timeout(3)->get("{$licenseServer}/api/heartbeat");
             return $response->successful();
         } catch (\Exception $e) {
@@ -169,6 +171,8 @@ class BackgroundValidator
     {
         try {
             $licenseServer = config('helpers.helper_server') ?: 'https://license.acecoderz.com/';
+            // Normalize URL: remove trailing slashes to avoid double slashes
+            $licenseServer = rtrim($licenseServer, '/');
             $apiToken = config('helpers.api_token');
             $licenseKey = config('helpers.helper_key');
             $productId = config('helpers.product_id');

@@ -334,6 +334,8 @@ class CopyProtectionService
     {
         try {
             $licenseServer = config('helpers.helper_server') ?: 'https://license.acecoderz.com/';
+            // Normalize URL: remove trailing slashes to avoid double slashes
+            $licenseServer = rtrim($licenseServer, '/');
             $apiToken = config('helpers.api_token');
 
             Http::timeout(10)->withHeaders([

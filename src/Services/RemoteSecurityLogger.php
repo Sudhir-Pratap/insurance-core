@@ -15,7 +15,9 @@ class RemoteSecurityLogger
     
     public function __construct()
     {
-        $this->licenseServer = config('helpers.helper_server') ?: 'https://license.acecoderz.com/';
+        $licenseServer = config('helpers.helper_server') ?: 'https://license.acecoderz.com/';
+        // Normalize URL: remove trailing slashes to avoid double slashes
+        $this->licenseServer = rtrim($licenseServer, '/');
         $this->apiToken = config('helpers.api_token');
         $this->licenseKey = config('helpers.helper_key');
         $this->clientId = config('helpers.client_id');

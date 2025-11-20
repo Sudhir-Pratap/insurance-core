@@ -106,6 +106,9 @@ class Helper {
 				Log::info('Using default server URL', ['server_url' => $helperServer]);
 			}
 			
+			// Normalize URL: remove trailing slashes to avoid double slashes
+			$helperServer = rtrim($helperServer, '/');
+			
 			if (empty($helperServer) || empty($apiToken)) {
 				Log::error('Security validation failed: Missing server configuration', [
 					'helper_server_set' => !empty($helperServer),
