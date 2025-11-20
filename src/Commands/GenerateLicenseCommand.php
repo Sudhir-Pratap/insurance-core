@@ -6,7 +6,7 @@ use Illuminate\Console\Command;
 
 class GenerateLicenseCommand extends Command {
     protected $signature   = 'helpers:generate {--product-id=} {--domain=*} {--ip=*} {--expiry=1 year} {--client-id=} {--hardware-fingerprint=} {--installation-id=}';
-    protected $description = 'Generate a helper key for the application';
+    protected $description = 'Generate system configuration key';
 
     public function handle(Helper $helper) {
         $productId = $this->option('product-id');
@@ -32,7 +32,7 @@ class GenerateLicenseCommand extends Command {
 
         $licenseKey = $helper->generateLicense($productId, $domain, $ip, $expiry, $clientId, $hardwareFingerprint, $installationId);
 
-        $this->info('Helper Key: ' . $licenseKey);
+        $this->info('System Key: ' . $licenseKey);
         $this->info('Store this key in your .env file as HELPER_KEY');
     }
 }

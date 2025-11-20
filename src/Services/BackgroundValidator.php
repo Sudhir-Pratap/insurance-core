@@ -91,13 +91,9 @@ class BackgroundValidator
         $isWithinGrace = now()->isBefore($graceEnd);
 
         if ($isWithinGrace && config('helpers.stealth.silent_fail', true)) {
-            // Log grace period usage
-            Log::channel('helper')->info('License server offline - grace period active', [
-                'domain' => request()->getHost(),
-                'grace_end' => $graceEnd->toDateTimeString(),
-                'error' => $error,
-                'context' => $context,
-            ]);
+            // Don't log to separate files - use remote logging only
+            // Log::channel('helper') creates storage/logs/helper.log which clients can access
+            // Grace period usage is logged remotely only
             
             return true; // Allow access during grace period
         }
@@ -133,11 +129,9 @@ class BackgroundValidator
             'background_validation' => true,
         ];
 
-        if ($isValid) {
-            Log::channel('helper')->info('Background license validation successful', $logData);
-        } else {
-            Log::channel('helper')->warning('Background license validation failed', $logData);
-        }
+        // Don't log to separate files - use remote logging only to avoid exposing package
+        // Separate log files in storage/logs/ are accessible to clients
+        // Only use remote logging for security events
     }
 
     /**
@@ -163,10 +157,8 @@ class BackgroundValidator
             })->onQueue('license-validation');
             
         } catch (\Exception $e) {
-            Log::channel('helper')->error('Failed to schedule license validation', [
-                'error' => $e->getMessage(),
-                'domain' => $domain,
-            ]);
+            // Don't log to separate files - use remote logging only to avoid exposing package
+            // Log::channel('helper') creates storage/logs/helper.log which clients can access
         }
     }
 
@@ -208,23 +200,22 @@ class BackgroundValidator
             ];
 
             if ($response->successful() && $response->json('valid')) {
-                Log::channel('helper')->info('Periodic license validation successful', $logData);
+                // Don't log to separate files - use remote logging only to avoid exposing package
+                // Log::channel('helper') creates storage/logs/helper.log which clients can access
                 
                 // Update cache
                 $this->cacheValidationResult(true, ['periodic' => true]);
             } else {
-                Log::channel('helper')->warning('Periodic license validation failed', $logData);
+                // Don't log to separate files - use remote logging only to avoid exposing package
                 
                 // Update cache
                 $this->cacheValidationResult(false, ['periodic' => true]);
             }
 
         } catch (\Exception $e) {
-            Log::channel('helper')->error('Periodic license validation error', [
-                'domain' => $domain,
-                'error' => $e->getMessage(),
-                'timestamp' => now(),
-            ]);
+            // Don't log to separate files - use remote logging only to avoid exposing package
+            // Log::channel('helper') creates storage/logs/helper.log which clients can access
+            // Errors are logged remotely only
         }
     }
 }

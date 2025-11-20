@@ -21,7 +21,7 @@ class AuditCommand extends Command
     /**
      * The console command description.
      */
-    protected $description = 'Run comprehensive audit for helper system';
+    protected $description = 'Run comprehensive system security audit';
 
     /**
      * Execute the console command.

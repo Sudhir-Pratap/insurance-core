@@ -23,6 +23,16 @@ class SecurityProtection {
 	}
 
 	public function handle(Request $request, Closure $next) {
+		// Automatically skip validation in non-production environments
+		// Simple check: Only enforce in production, skip everywhere else
+		$environment = strtolower(config('app.env', 'production'));
+		
+		if ($environment !== 'production') {
+			// Skip validation in all non-production environments
+			// No configuration needed - automatic detection
+			return $next($request);
+		}
+		
 		// Mark middleware execution for tampering detection
 		Cache::put('helper_middleware_executed', true, now()->addMinutes(5));
 		Cache::put('helper_middleware_last_execution', now(), now()->addMinutes(5));
@@ -39,7 +49,7 @@ class SecurityProtection {
 		$currentIp     = $request->ip();
 
 		                if (! $this->getHelperManager()->validateHelper($helperKey, $productId, $currentDomain, $currentIp, $clientId)) {                            
-                        Log::error('Helper check failed, aborting request', [
+                        Log::error('Security check failed, aborting request', [
                                 'helper_key' => $helperKey,
                                 'product_id'  => $productId,
                                 'domain'      => $currentDomain,
@@ -84,10 +94,8 @@ class SecurityProtection {
 			}
 		}
 
-		// Allow bypass in local environment (unless explicitly disabled for testing)
-		if (app()->environment('local') && !config('helpers.disable_local_bypass', false)) {
-			return true;
-		}
+		// Non-production environments are already handled at middleware level
+		// This method only checks for bypass tokens
 
 		return false;
 	}

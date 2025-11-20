@@ -8,7 +8,7 @@ use Illuminate\Console\Command;
 class LicenseInfoCommand extends Command
 {
     protected $signature = 'helpers:info';
-    protected $description = 'Show the current hardware fingerprint and installation ID for helper generation.';
+    protected $description = 'Display system information and identifiers';
 
     public function handle()
     {
@@ -18,7 +18,7 @@ class LicenseInfoCommand extends Command
         $installationId = $manager->getOrCreateInstallationId();
         $domain = $this->getServerDomain();
         
-        $this->info('Helper Information:');
+        $this->info('System Information:');
         $this->line('');
         $this->info('Hardware Fingerprint: ' . $fingerprint);
         $this->info('Installation ID: ' . $installationId);
@@ -28,13 +28,13 @@ class LicenseInfoCommand extends Command
         // Show current configuration
         $this->line('');
         $this->info('Current Configuration:');
-        $this->info('Helper Key: ' . (config('helpers.helper_key') ? 'Configured' : 'Not set'));
+        $this->info('System Key: ' . (config('helpers.helper_key') ? 'Configured' : 'Not set'));
         $this->info('Product ID: ' . (config('helpers.product_id') ?: 'Not set'));
         $this->info('Client ID: ' . (config('helpers.client_id') ?: 'Not set'));
-        $this->info('Helper Server: ' . config('helpers.helper_server'));
+        $this->info('Server URL: ' . config('helpers.helper_server'));
         
         $this->line('');
-        $this->info('Use this information to generate a helper:');
+        $this->info('Use this information to generate system configuration:');
         $this->info('php artisan helpers:generate --product-id=YOUR_PRODUCT_ID --domain=' . $domain . ' --ip=' . $currentIp . ' --client-id=YOUR_CLIENT_ID');
     }
     

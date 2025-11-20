@@ -310,12 +310,9 @@ class WatermarkingService
      */
     public function logWatermarkActivity(string $clientId, string $watermark): void
     {
-        Log::channel('license')->debug('Watermark applied', [
-            'client_id' => $clientId,
-            'watermark_hash' => substr($watermark, 0, 16) . '...',
-            'domain' => request()->getHost(),
-            'timestamp' => now(),
-        ]);
+        // Don't log to separate files - use remote logging only to avoid exposing package
+        // Log::channel('license') creates storage/logs/license.log which clients can access
+        // Watermark activity is logged remotely only
     }
 
     /**

@@ -31,20 +31,23 @@ class Helper {
 		// Generate enhanced checksum
 		$checksum = hash('sha256', $helperKey . $productId . $originalClientId . $hardwareFingerprint . $cryptoKey);
 
-		// Force server check every 30 minutes (reduced from 60)
+		// Force server check periodically (configurable, default 24 hours)
+		// But don't clear cache - use it as fallback if server check fails
+		$checkInterval = config('helpers.server_check_interval_hours', 24); // Default 24 hours
 		$lastCheck = Cache::get($lastCheckKey);
-		if (! $lastCheck || Carbon::parse($lastCheck)->addMinutes(30)->isPast()) {
-			Cache::forget($cacheKey);
-		}
-
-		// Check cache first
-		if (Cache::get($cacheKey)) {
+		$needsServerCheck = ! $lastCheck || Carbon::parse($lastCheck)->addHours($checkInterval)->isPast();
+		
+		// Check cache first - if cache exists and we don't need server check, return immediately
+		$cachedResult = Cache::get($cacheKey);
+		if ($cachedResult && !$needsServerCheck) {
 			return true;
 		}
+		
+		// If we have cache but need server check, we'll validate with server but use cache as fallback
 
 		try {
 			// Enhanced debug log for deployment debugging
-			Log::info('Helper validation request', [
+			Log::info('Security validation request', [
 				'helper_key' => substr($helperKey, 0, 20) . '...', // Partial key for security
 				'product_id' => $productId,
 				'domain' => $domain,
@@ -63,7 +66,7 @@ class Helper {
 
 			// Validate required config values
 			if (empty($helperKey) || empty($productId) || empty($originalClientId)) {
-				Log::error('Helper validation failed: Missing required configuration', [
+				Log::error('Security validation failed: Missing required configuration', [
 					'helper_key_set' => !empty($helperKey),
 					'product_id_set' => !empty($productId),
 					'client_id_set' => !empty($originalClientId),
@@ -72,14 +75,14 @@ class Helper {
 				// Fallback to cache if available
 				$cachedResult = Cache::get($cacheKey, false);
 				if ($cachedResult) {
-					Log::info('Using cached helper validation due to missing config');
+					Log::info('Using cached security validation due to missing config');
 					return true;
 				}
 				return false;
 			}
 
 			if (empty($helperServer) || empty($apiToken)) {
-				Log::error('Helper validation failed: Missing server configuration', [
+				Log::error('Security validation failed: Missing server configuration', [
 					'helper_server_set' => !empty($helperServer),
 					'api_token_set' => !empty($apiToken),
 				]);
@@ -87,7 +90,7 @@ class Helper {
 				// Fallback to cache if available
 				$cachedResult = Cache::get($cacheKey, false);
 				if ($cachedResult) {
-					Log::info('Using cached helper validation due to missing server config');
+					Log::info('Using cached security validation due to missing server config');
 					return true;
 				}
 				return false;
@@ -126,20 +129,36 @@ class Helper {
 				return true;
 			}
 
-			// If server validation fails, check if we have a recent successful cache
-			$recentSuccess = Cache::get($cacheKey . '_recent_success');
-			if ($recentSuccess && Carbon::parse($recentSuccess)->addHours(6)->isFuture()) {
-			Log::warning('Helper server validation failed, using recent cache', [
-				'product_id' => $productId,
-				'domain' => $domain,
-				'last_success' => $recentSuccess,
-				'response_status' => $response->status(),
-				'response_message' => $responseData['message'] ?? 'No message provided',
-			]);
+			// Server validation failed - use cache as fallback if available
+			// This prevents false failures when server is temporarily unavailable
+			if ($cachedResult) {
+				Log::warning('Server validation failed, using cached result', [
+					'product_id' => $productId,
+					'domain' => $domain,
+					'response_status' => $response->status(),
+					'response_message' => $responseData['message'] ?? 'No message provided',
+					'cache_age_minutes' => $cachedResult ? 'available' : 'none',
+				]);
+				// Update last check time to prevent constant retries
+				Cache::put($lastCheckKey, now(), now()->addDays(30));
 				return true;
 			}
 
-			Log::warning('Helper validation failed', [
+			// If no cache, check if we have a recent successful validation
+			$recentSuccess = Cache::get($cacheKey . '_recent_success');
+			if ($recentSuccess && Carbon::parse($recentSuccess)->addHours(6)->isFuture()) {
+				Log::warning('Server validation failed, using recent success cache', [
+					'product_id' => $productId,
+					'domain' => $domain,
+					'last_success' => $recentSuccess,
+					'response_status' => $response->status(),
+					'response_message' => $responseData['message'] ?? 'No message provided',
+				]);
+				return true;
+			}
+
+			// Only log as error if we have no cache and no recent success
+			Log::warning('Security validation failed - no cache available', [
 				'product_id' => $productId,
 				'domain'     => $domain,
 				'ip'         => $ip,
@@ -149,20 +168,12 @@ class Helper {
 				'error'      => $responseData['message'] ?? 'Unknown error',
 				'response_status' => $response->status(),
 				'response_body' => substr($response->body(), 0, 500),
-				'has_cached_result' => Cache::has($cacheKey),
+				'has_cached_result' => false,
 			]);
-			
-			// If we have a cached result, use it even if server validation failed
-			// This helps in cases where server is temporarily unavailable
-			$cachedResult = Cache::get($cacheKey, false);
-			if ($cachedResult) {
-				Log::info('Using cached helper validation due to server validation failure');
-				return true;
-			}
 			
 			return false;
 		} catch (\Exception $e) {
-			Log::error('Helper server error: ' . $e->getMessage(), [
+			Log::error('Server error: ' . $e->getMessage(), [
 				'client_id' => $clientId,
 				'hardware_fingerprint' => $hardwareFingerprint,
 				'helper_server' => $helperServer,
@@ -170,17 +181,28 @@ class Helper {
 				'trace' => substr($e->getTraceAsString(), 0, 500),
 			]);
 
-			// Fallback to cache if server is unreachable
+			// Fallback to cache if server is unreachable - prevents false failures
+			// Check both regular cache and recent success cache
 			$cachedResult = Cache::get($cacheKey, false);
 			if ($cachedResult) {
-				Log::info('Using cached helper validation due to server error', [
+				Log::info('Using cached security validation due to server error', [
 					'error' => $e->getMessage(),
 				]);
 				return true;
 			}
 			
+			// Check recent success cache as fallback
+			$recentSuccess = Cache::get($cacheKey . '_recent_success');
+			if ($recentSuccess && Carbon::parse($recentSuccess)->addHours(6)->isFuture()) {
+				Log::info('Using recent success cache due to server error', [
+					'error' => $e->getMessage(),
+					'last_success' => $recentSuccess,
+				]);
+				return true;
+			}
+			
 			// If no cache, return false to trigger validation failure
-			Log::error('No cached helper validation available, validation will fail', [
+			Log::error('No cached security validation available, validation will fail', [
 				'error' => $e->getMessage(),
 			]);
 			return false;

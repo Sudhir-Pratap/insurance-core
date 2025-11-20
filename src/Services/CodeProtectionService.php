@@ -91,7 +91,7 @@ class CodeProtectionService
         $integrityHash = $this->generateIntegrityHash();
         Cache::put('code_integrity_hash', $integrityHash, now()->addDays(30));
 
-        // This would be called during license validation
+        // This would be called during security validation
         $this->verifyIntegrity($integrityHash);
     }
 

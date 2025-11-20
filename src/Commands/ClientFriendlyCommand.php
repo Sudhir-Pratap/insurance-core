@@ -11,7 +11,7 @@ class ClientFriendlyCommand extends Command
                            {--check : Check if installation is operating normally}
                            {--test : Test system functionality}';
     
-    protected $description = 'Client-friendly helper system status check';
+    protected $description = 'Display system status information';
 
     public function handle()
     {
@@ -35,10 +35,10 @@ class ClientFriendlyCommand extends Command
         
         // Check helper configuration
         $this->info('Helper Configuration:');
-        $this->line('Helper Key: ' . (config('helpers.helper_key') ? '✅ Configured' : '❌ Missing'));
+        $this->line('System Key: ' . (config('helpers.helper_key') ? '✅ Configured' : '❌ Missing'));
         $this->line('Product ID: ' . (config('helpers.product_id') ?: 'Not Set'));
         $this->line('Client ID: ' . (config('helpers.client_id') ?: 'Not Set'));
-        $this->line('Helper Server: ' . config('helpers.helper_server'));
+        $this->line('Server URL: ' . config('helpers.helper_server'));
         $this->line('');
         
         // Check stealth mode (for admin reference)
@@ -88,7 +88,7 @@ class ClientFriendlyCommand extends Command
         
         if ($helperConfigured && !$suspicious) {
             $this->info('🎉 Overall Status: HEALTHY');
-            $this->line('Your system is operating normally with proper helper validation.');
+            $this->line('Your system is operating normally with proper security validation.');
             $this->line('No action required from your end.');
         } else {
             $this->warn('⚠️  Overall Status: ATTENTION REQUIRED');

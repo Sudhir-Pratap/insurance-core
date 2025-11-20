@@ -64,12 +64,12 @@ class TestIntegrityCommand extends Command {
 			])->timeout(10)->get("{$licenseServer}/api/heartbeat");
 
 			if ($response->successful()) {
-				$this->info('✅ Helper server communication successful');
+				$this->info('✅ Server communication successful');
 			} else {
-				$this->error('❌ Helper server communication failed');
+				$this->error('❌ Server communication failed');
 			}
 		} catch (\Exception $e) {
-			$this->error('❌ Helper server communication error: ' . $e->getMessage());
+			$this->error('❌ Server communication error: ' . $e->getMessage());
 		}
 
 		// Security recommendations
@@ -78,7 +78,7 @@ class TestIntegrityCommand extends Command {
 		$this->line('1. Keep your license keys secure');
 		$this->line('2. Monitor installation logs regularly');
 		$this->line('3. Use HTTPS for all communications');
-		$this->line('4. Regularly update your helper server');
+		$this->line('4. Regularly update your server configuration');
 		$this->line('5. Monitor for suspicious activity');
 
 		$this->newLine();

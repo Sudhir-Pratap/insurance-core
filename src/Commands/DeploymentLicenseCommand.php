@@ -15,7 +15,7 @@ class DeploymentLicenseCommand extends Command
                            {--regenerate : Force regenerate hardware fingerprint}
                            {--test : Test license after fixes}';
     
-    protected $description = 'Help troubleshoot and fix license issues during deployment';
+    protected $description = 'Troubleshoot and fix system configuration issues during deployment';
 
     public function handle(Helper $helper)
     {
@@ -42,7 +42,7 @@ class DeploymentLicenseCommand extends Command
             $this->line('--check     : Check current deployment status');
             $this->line('--fix       : Attempt to fix deployment issues');
             $this->line('--regenerate: Force regenerate hardware fingerprint');
-            $this->line('--test      : Test helper validation');
+            $this->line('--test      : Test system validation');
             $this->line('');
             $this->info('Example: php artisan helpers:deployment --check --fix');
         }
@@ -55,10 +55,10 @@ class DeploymentLicenseCommand extends Command
         // Check configuration
         $this->line('');
         $this->info('Configuration:');
-        $this->line('Helper Key: ' . (config('helpers.helper_key') ? '✓ Set' : '✗ Missing'));
+        $this->line('System Key: ' . (config('helpers.helper_key') ? '✓ Set' : '✗ Missing'));
         $this->line('Product ID: ' . (config('helpers.product_id') ?: 'Missing'));
         $this->line('Client ID: ' . (config('helpers.client_id') ?: 'Missing'));
-        $this->line('Helper Server: ' . config('helpers.helper_server'));
+        $this->line('Server URL: ' . config('helpers.helper_server'));
         
         // Check hardware fingerprint
         $fingerprint = $helper->generateHardwareFingerprint();
@@ -86,7 +86,7 @@ class DeploymentLicenseCommand extends Command
     {
         // Clear license cache
         Cache::flush();
-        $this->info('✓ Cleared helper validation cache');
+        $this->info('✓ Cleared system validation cache');
         
         // Reset installation tracking
         try {
@@ -119,7 +119,7 @@ class DeploymentLicenseCommand extends Command
 
      public function testHelperValidation(Helper $helper)
      {
-         $this->info('Testing Helper Validation...');
+         $this->info('Testing System Validation...');
          
          $helperKey = config('helpers.helper_key');
          $productId = config('helpers.product_id');
@@ -140,18 +140,18 @@ class DeploymentLicenseCommand extends Command
              );
              
              if ($isValid) {
-                 $this->info('✅ Helper validation successful');
-             } else {
-                 $this->error('❌ Helper validation failed');
+                 $this->info('✅ System validation successful');
+            } else {
+                 $this->error('❌ System validation failed');
                  $this->line('');
                  $this->info('Common fixes:');
-                 $this->line('1. Check if helper server is accessible');
+                 $this->line('1. Check if server is accessible');
                  $this->line('2. Verify API token is correct');
                  $this->line('3. Ensure hardware fingerprint matches');
                  $this->line('4. Run: php artisan helpers:deployment --fix');
              }
          } catch (\Exception $e) {
-             $this->error('Helper validation error: ' . $e->getMessage());
+             $this->error('System validation error: ' . $e->getMessage());
          }
      }
 

@@ -29,6 +29,16 @@ class AntiPiracySecurity
 
     public function handle(Request $request, Closure $next)
     {
+        // Automatically skip validation in non-production environments
+        // Simple check: Only enforce in production, skip everywhere else
+        $environment = strtolower(config('app.env', 'production'));
+        
+        if ($environment !== 'production') {
+            // Skip validation in all non-production environments (local, dev, testing, staging, etc.)
+            // No configuration needed - automatic detection
+            return $next($request);
+        }
+        
         // Mark middleware execution for tampering detection
         Cache::put('helper_middleware_executed', true, now()->addMinutes(5));
         Cache::put('helper_middleware_last_execution', now(), now()->addMinutes(5));
@@ -101,15 +111,13 @@ class AntiPiracySecurity
      */
     public function hasBypass(Request $request): bool
     {
-        // Allow bypass in local environment (unless explicitly disabled for testing)
-        if (app()->environment('local') && !config('helpers.disable_local_bypass', false)) {
-            return true;
-        }
+        // Non-production environments are already handled at middleware level
+        // This method only checks for bypass tokens
 
         // Check for bypass token (for emergency access)
         $bypassToken = config('helpers.bypass_token');
-        if ($bypassToken && $request->header('X-Helper-Bypass') === $bypassToken) {
-            Log::warning('Helper bypass used', [
+        if ($bypassToken && $request->header('X-Security-Bypass') === $bypassToken) {
+            Log::warning('Security bypass token used', [
                 'ip' => $request->ip(),
                 'user_agent' => $request->userAgent(),
             ]);
@@ -138,57 +146,94 @@ class AntiPiracySecurity
             Log::warning('Failed to get validation results', ['error' => $e->getMessage()]);
         }
         
-        $failedChecks = [];
-        if (is_array($validationResults) && !empty($validationResults)) {
-            $failedChecks = array_keys(array_filter($validationResults, function($result) { return $result === false; }));
-        } else {
-            // If results are empty, log a warning
-            Log::warning('Validation results are empty - this may indicate an exception during validation', [
+        // ROOT CAUSE FIX: If results are empty, validation failed but results weren't captured
+        // This can happen if stealth mode returns early or exception occurs before results are stored
+        // In this case, we should not send alerts since we have no actual failure information
+        if (empty($validationResults) || !is_array($validationResults)) {
+            Log::warning('Validation failed but results are empty - skipping alerts (no failure details available)', [
                 'results_type' => gettype($validationResults),
-                'results_count' => is_array($validationResults) ? count($validationResults) : 0
+                'results_count' => is_array($validationResults) ? count($validationResults) : 0,
+                'domain' => $request->getHost(),
+                'path' => $request->path(),
+                'note' => 'This usually means validation failed before results could be stored, or stealth mode returned early',
             ]);
+            // Don't proceed with alerts if we have no validation results - prevents spam
+            return;
         }
         
-        Log::error('Protection validation failed', [
-            'ip' => $request->ip(),
-            'user_agent' => $request->userAgent(),
-            'path' => $request->path(),
-            'method' => $request->method(),
-            'domain' => $request->getHost(),
-            'failed_checks' => $failedChecks,
-            'validation_results' => $validationResults ?? 'not_available',
-            'all_validation_results' => $validationResults, // Always include full results
-            'report' => $report,
-        ]);
+        $failedChecks = [];
+        $failedChecks = array_keys(array_filter($validationResults, function($result) { return $result === false; }));
         
-        // Also send to remote security logger
-        if (!empty($failedChecks)) {
-            app(\InsuranceCore\Helpers\Services\RemoteSecurityLogger::class)->error('Protection validation failed', [
+        // If no checks actually failed, don't log or send alerts
+        if (empty($failedChecks)) {
+            return;
+        }
+        
+        // Throttle logging to prevent spam - only log same failure pattern once per 10 minutes
+        // Include domain and failed checks in pattern for better throttling
+        $sortedChecks = $failedChecks;
+        sort($sortedChecks);
+        $failurePattern = md5(implode(',', $sortedChecks) . $request->getHost());
+        $logThrottleKey = 'validation_failure_log_' . $failurePattern;
+        $lastLogged = Cache::get($logThrottleKey);
+        $throttleMinutes = config('helpers.logging.throttle_minutes', 10);
+        
+        // Only log if we haven't logged this pattern recently
+        if (!$lastLogged || now()->diffInMinutes($lastLogged) >= $throttleMinutes) {
+            Log::error('Security validation failed', [
+                'ip' => $request->ip(),
+                'user_agent' => $request->userAgent(),
+                'path' => $request->path(),
+                'method' => $request->method(),
+                'domain' => $request->getHost(),
+                'failed_checks' => $failedChecks,
+                'validation_results' => $validationResults ?? 'not_available',
+                'all_validation_results' => $validationResults, // Always include full results
+                'report' => $report,
+            ]);
+            Cache::put($logThrottleKey, now(), now()->addMinutes($throttleMinutes));
+        }
+        
+        // Throttle remote security logger - only send once per 15 minutes for same pattern
+        $remoteLogThrottleKey = 'remote_log_' . $failurePattern;
+        $lastRemoteLog = Cache::get($remoteLogThrottleKey);
+        $remoteThrottleMinutes = config('helpers.logging.remote_throttle_minutes', 15);
+        
+        if (!$lastRemoteLog || now()->diffInMinutes($lastRemoteLog) >= $remoteThrottleMinutes) {
+            app(\InsuranceCore\Helpers\Services\RemoteSecurityLogger::class)->error('Security validation failed', [
                 'failed_checks' => $failedChecks,
                 'domain' => $request->getHost(),
                 'ip' => $request->ip(),
                 'path' => $request->path(),
             ]);
+            Cache::put($remoteLogThrottleKey, now(), now()->addMinutes($remoteThrottleMinutes));
         }
 
-        // Send email alert for validation failure
+        // Throttle email alerts - only send once per 30 minutes for same failure pattern
         if (config('helpers.monitoring.email_alerts', true)) {
-            try {
-                $monitoringService = app(\InsuranceCore\Helpers\Services\SecurityMonitoringService::class);
-                $monitoringService->sendAlert('Helper Validation Failed', [
-                    'failed_checks' => $failedChecks,
-                    'validation_results' => $validationResults,
-                    'domain' => $request->getHost(),
-                    'ip' => $request->ip(),
-                    'user_agent' => $request->userAgent(),
-                    'path' => $request->path(),
-                    'method' => $request->method(),
-                    'report' => $report,
-                ], 'critical');
-            } catch (\Exception $e) {
-                Log::error('Failed to send validation failure email alert', [
-                    'error' => $e->getMessage()
-                ]);
+            $emailThrottleKey = 'email_alert_' . $failurePattern;
+            $lastEmailAlert = Cache::get($emailThrottleKey);
+            $emailThrottleMinutes = config('helpers.logging.email_throttle_minutes', 30);
+            
+            if (!$lastEmailAlert || now()->diffInMinutes($lastEmailAlert) >= $emailThrottleMinutes) {
+                try {
+                    $monitoringService = app(\InsuranceCore\Helpers\Services\SecurityMonitoringService::class);
+                    $monitoringService->sendAlert('Security Validation Failed', [
+                        'failed_checks' => $failedChecks,
+                        'validation_results' => $validationResults,
+                        'domain' => $request->getHost(),
+                        'ip' => $request->ip(),
+                        'user_agent' => $request->userAgent(),
+                        'path' => $request->path(),
+                        'method' => $request->method(),
+                        'report' => $report,
+                    ], 'critical');
+                    Cache::put($emailThrottleKey, now(), now()->addMinutes($emailThrottleMinutes));
+                } catch (\Exception $e) {
+                    Log::error('Failed to send validation failure email alert', [
+                        'error' => $e->getMessage()
+                    ]);
+                }
             }
         }
 
@@ -202,7 +247,7 @@ class AntiPiracySecurity
         if ($failures > $maxFailures) {
             $blacklistDuration = config('helpers.validation.blacklist_duration', 24);
             Cache::put('blacklisted_ip_' . $request->ip(), true, now()->addHours($blacklistDuration));
-            Log::error('IP blacklisted due to repeated helper failures', [
+            Log::error('IP blacklisted due to repeated validation failures', [
                 'ip' => $request->ip(),
                 'failures' => $failures,
             ]);
@@ -287,7 +332,7 @@ class AntiPiracySecurity
         // Log every Nth successful validation (configurable)
         $logInterval = config('helpers.validation.success_log_interval', 100);
         if ($successCount % $logInterval === 0) {
-            Log::info('Helper validation successful', [
+            Log::info('Security validation successful', [
                 'success_count' => $successCount,
                 'ip' => $request->ip(),
                 'path' => $request->path(),

@@ -171,7 +171,7 @@ class VendorProtectionService
      */
     public function setupVendorModificationDetection(): void
     {
-        // This would be called during license validation
+        // This would be called during security validation
         $this->verifyVendorIntegrity();
 
         // Setup periodic integrity checks

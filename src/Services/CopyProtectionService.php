@@ -11,27 +11,38 @@ class CopyProtectionService
 {
     /**
      * Detect potential reselling activity
+     * CRITICAL: This is one of the main security features - always enabled
      */
     public function detectResellingBehavior(array $context = []): bool
     {
+        // Skip if anti-reselling is disabled (not recommended)
+        if (!config('helpers.anti_reselling.enabled', true)) {
+            return false;
+        }
+        
         $suspiciousIndicators = [
-            'multiple_domains' => $this->checkMultipleDomainUsage(),
-            'usage_patterns' => $this->analyzeUsagePatterns(),
-            'deployment_patterns' => $this->analyzeDeploymentPatterns(),
-            'code_modifications' => $this->detectCodeModifications(),
-            'network_behavior' => $this->analyzeNetworkBehavior(),
-            'installation_clustering' => $this->checkInstallationClustering(),
+            'multiple_domains' => $this->checkMultipleDomainUsage(), // PRIMARY: Multiple domains = reselling
+            'usage_patterns' => $this->analyzeUsagePatterns(), // PRIMARY: Different usage patterns = different clients
+            'deployment_patterns' => $this->analyzeDeploymentPatterns(), // Hardware changes = new installation
+            'code_modifications' => $this->detectCodeModifications(), // Code changes = trying to bypass
+            'network_behavior' => $this->analyzeNetworkBehavior(), // Network patterns
+            'installation_clustering' => $this->checkInstallationClustering(), // Multiple installations in same area
         ];
 
         $score = $this->calculateSuspiciousScore($suspiciousIndicators);
         $threshold = config('helpers.anti_reselling.threshold_score', 75);
 
         if ($score >= $threshold) {
+            Log::warning('Reselling activity detected', [
+                'score' => $score,
+                'threshold' => $threshold,
+                'indicators' => $suspiciousIndicators,
+            ]);
             $this->handlePotentiallySuspiciousActivity($suspiciousIndicators, $score);
-            return true;
+            return true; // Reselling detected
         }
 
-        return false;
+        return false; // No reselling detected
     }
 
     /**
@@ -48,18 +59,27 @@ class CopyProtectionService
             Cache::put($domainKey, $domains, now()->addDays(30));
         }
 
-        // Allow max 2 domains per license
-        $maxAllowed = config('helpers.anti_reselling.max_domains', 2);
+        // Multiple domains = potential reselling indicator
+        // Allow max 3 domains per license (allows staging + production + dev)
+        $maxAllowed = config('helpers.anti_reselling.max_domains', 3);
         if (count($domains) > $maxAllowed) {
-            app(\InsuranceCore\Helpers\Services\RemoteSecurityLogger::class)->critical('Multiple domains detected', [
+            Log::warning('Multiple domains detected - potential reselling', [
+                'domains' => $domains,
+                'max_allowed' => $maxAllowed,
+                'excess_count' => count($domains) - $maxAllowed,
+            ]);
+            
+            app(\InsuranceCore\Helpers\Services\RemoteSecurityLogger::class)->critical('Multiple domains detected - reselling suspected', [
                 'domains' => $domains,
                 'license_key' => config('helpers.helper_key'),
                 'excess_count' => count($domains) - $maxAllowed,
             ]);
-            return 50; // High suspicion score
+            return 50; // High suspicion score (primary reselling indicator)
         }
 
-        return count($domains) > 1 ? 20 : 0;
+        // Multiple domains (even within limit) is slightly suspicious but acceptable
+        // Only flag if 3+ domains (allows legitimate multi-environment setups)
+        return count($domains) >= 3 ? 15 : 0; // Reduced from 20 to 15, only if 3+ domains
     }
 
     /**
@@ -93,25 +113,28 @@ class CopyProtectionService
         $score = 0;
         
         // Different IP ranges suggest multiple installations
+        // More lenient: only flag if many different IP ranges (legitimate load balancers use multiple IPs)
         $uniqueIPRanges = count(array_unique(array_column($patterns, 'ip_range')));
-        if ($uniqueIPRanges > 2) {
-            $score += 30;
+        if ($uniqueIPRanges > 5) { // Increased from 2 to 5
+            $score += 20; // Reduced from 30
         }
 
         // Different user agents suggest different clients
+        // More lenient: many legitimate sites have diverse user agents
         $uniqueUserAgents = count(array_unique(array_column($patterns, 'user_agent')));
-        if ($uniqueUserAgents > 5) {
-            $score += 25;
+        if ($uniqueUserAgents > 10) { // Increased from 5 to 10
+            $score += 15; // Reduced from 25
         }
 
         // Access patterns indicating demo/trial behavior
+        // More lenient: high-traffic legitimate sites can have many requests
         $hourDistribution = array_count_values(array_column($patterns, 'time'));
         $unusualHours = count(array_filter($hourDistribution, function($count) {
-            return $count > 100; // More than 100 requests in single hour
+            return $count > 500; // Increased from 100 to 500 requests per hour
         }));
         
         if ($unusualHours > 0) {
-            $score += 20;
+            $score += 10; // Reduced from 20
         }
 
         return $score;
@@ -204,9 +227,15 @@ class CopyProtectionService
 
     /**
      * Analyze network behavior for suspicious patterns
+     * Only active if network_analysis is enabled (disabled by default)
      */
     public function analyzeNetworkBehavior(): int
     {
+        // Skip if network analysis is disabled (many legitimate users use VPNs)
+        if (!config('helpers.anti_reselling.network_analysis', false)) {
+            return 0;
+        }
+        
         $score = 0;
         
         // Check for VPN/Proxy usage patterns
@@ -225,14 +254,15 @@ class CopyProtectionService
         $ipData['request_count']++;
         Cache::put("ip_data_{$ip}", $ipData, now()->addDays(7));
 
-        // VPN/Proxy detection (basic heuristics)
-        if ($ipData['is_vpn_suspicious']) {
-            $score += 15;
+        // VPN/Proxy detection (basic heuristics) - only if explicitly enabled
+        if (config('helpers.anti_reselling.detect_vpn', false) && $ipData['is_vpn_suspicious']) {
+            $score += 10; // Reduced from 15
         }
 
         // Rapid request patterns suggesting automated tools
-        if ($ipData['request_count'] > 1000) {
-            $score += 20;
+        // More lenient: legitimate high-traffic sites can have many requests
+        if ($ipData['request_count'] > 5000) { // Increased from 1000 to 5000
+            $score += 15; // Reduced from 20
         }
 
         return $score;

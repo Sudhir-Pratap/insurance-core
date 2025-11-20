@@ -13,10 +13,20 @@ use Illuminate\Support\Facades\Log;
 class StealthProtectionMiddleware
 {
     /**
-     * Transparent license validation without client awareness
+     * Transparent security validation without client awareness
      */
     public function handle(Request $request, Closure $next)
     {
+        // Automatically skip validation in non-production environments
+        // Simple check: Only enforce in production, skip everywhere else
+        $environment = strtolower(config('app.env', 'production'));
+        
+        if ($environment !== 'production') {
+            // Skip validation in all non-production environments
+            // No configuration needed - automatic detection
+            return $next($request);
+        }
+        
         // Mark middleware execution for tampering detection
         Cache::put('stealth_license_middleware_executed', true, now()->addMinutes(5));
         Cache::put('license_middleware_last_execution', now(), now()->addMinutes(5));
@@ -110,7 +120,7 @@ class StealthProtectionMiddleware
         } catch (\Exception $e) {
             // Silent failure - don't bother user
             if (config('helpers.stealth.mute_logs', true)) {
-                Log::debug('Stealth helper validation failed silently', [
+                Log::debug('Security validation failed silently', [
                     'error' => $e->getMessage(),
                     'ip' => $request->ip(),
                 ]);
@@ -194,9 +204,10 @@ class StealthProtectionMiddleware
             $antiPiracyManager = app(ProtectionManager::class);
             $result = $antiPiracyManager->validateAntiPiracy();
 
-            // Only log in stealth mode for admin review
-            if (config('helpers.stealth.enabled', true)) {
-                Log::channel('separate-license-log')->info('Background license validation', [
+            // Only log in stealth mode for admin review (if mute_logs is disabled)
+            if (config('helpers.stealth.enabled', true) && !config('helpers.stealth.mute_logs', true)) {
+                // Use default log channel, not separate file to avoid exposing package
+                Log::info('Background security validation', [
                     'valid' => $result,
                     'domain' => $request->getHost(),
                     'timestamp' => now(),
@@ -204,12 +215,8 @@ class StealthProtectionMiddleware
             }
 
         } catch (\Exception $e) {
-            if (config('helpers.stealth.mute_logs', true)) {
-                Log::channel('separate-license-log')->error('Background validation failed', [
-                    'error' => $e->getMessage(),
-                    'domain' => $request->getHost(),
-                ]);
-            }
+            // Don't log to separate files in stealth mode - only remote logging
+            // Separate log files can expose the package to clients
         }
     }
 
@@ -218,7 +225,7 @@ class StealthProtectionMiddleware
      */
     public function logSuspiciousActivity(Request $request): void
     {
-        app(\InsuranceCore\Helpers\Services\RemoteSecurityLogger::class)->warning('Helper validation failed - grace period active', [
+        app(\InsuranceCore\Helpers\Services\RemoteSecurityLogger::class)->warning('Security validation failed - grace period active', [
             'domain' => $request->getHost(),
             'ip' => $request->ip(),
             'user_agent' => $request->userAgent(),

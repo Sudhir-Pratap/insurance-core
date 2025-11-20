@@ -30,6 +30,15 @@ class ProtectionManager
      */
     public function validateAntiPiracy(): bool
     {
+        // Skip validation in non-production environments (local, dev, testing)
+        // Production always enforces checks
+        if ($this->shouldSkipEnvironmentChecks()) {
+            Log::debug('Skipping security validation - non-production environment', [
+                'environment' => config('app.env'),
+            ]);
+            return true; // Always pass in non-production
+        }
+        
         // Check stealth mode configuration
         $stealthMode = config('helpers.stealth.enabled', false);
         
@@ -43,7 +52,7 @@ class ProtectionManager
         try {
             $validations['helper'] = $this->validateHelper();
         } catch (\Exception $e) {
-            Log::error('Helper validation exception', ['error' => $e->getMessage(), 'trace' => substr($e->getTraceAsString(), 0, 500)]);
+            Log::error('Security validation exception', ['error' => $e->getMessage(), 'trace' => substr($e->getTraceAsString(), 0, 500)]);
             $validations['helper'] = false;
         }
         
@@ -99,6 +108,47 @@ class ProtectionManager
         // Store results for debugging
         $this->lastValidationResults = $validations;
 
+        // CRITICAL: Vendor tampering - check if grace period has expired
+        // This is the main security focus - no modifications to package files allowed
+        // But we give 48 hours grace period to allow clients to restore files
+        if (isset($validations['vendor_integrity']) && $validations['vendor_integrity'] === false) {
+            // Check if any tampering has exceeded grace period
+            $tamperingFiles = Cache::get('vendor_tampering_files', []);
+            $gracePeriodHours = config('helpers.vendor_protection.grace_period_hours', 48);
+            
+            foreach ($tamperingFiles as $file => $firstDetected) {
+                $gracePeriodEnds = Carbon::parse($firstDetected)->addHours($gracePeriodHours);
+                if (now()->greaterThan($gracePeriodEnds)) {
+                    Log::emergency('CRITICAL: Vendor package tampering - grace period expired - validation failed', [
+                        'file' => $file,
+                        'first_detected' => $firstDetected,
+                        'grace_period_ended' => $gracePeriodEnds->toISOString(),
+                    ]);
+                    return false; // Fail after grace period expires
+                }
+            }
+            
+            // Still in grace period - don't fail yet, but log warning
+            $firstFile = array_key_first($tamperingFiles);
+            $firstDetected = $tamperingFiles[$firstFile];
+            $gracePeriodEnds = Carbon::parse($firstDetected)->addHours($gracePeriodHours);
+            $hoursRemaining = now()->diffInHours($gracePeriodEnds, false);
+            
+            Log::warning('Vendor package tampering detected - grace period active - will fail after grace period', [
+                'grace_period_hours' => $gracePeriodHours,
+                'hours_remaining' => $hoursRemaining,
+                'grace_period_ends' => $gracePeriodEnds->toISOString(),
+            ]);
+        }
+        
+        // Anti-reselling check - use threshold score system (more flexible)
+        // Don't immediately fail, but log and report - let threshold score handle it
+        // This allows legitimate multi-domain setups while catching actual resellers
+        if (isset($validations['usage_patterns']) && $validations['usage_patterns'] === false) {
+            Log::warning('Reselling activity detected - will be evaluated by threshold score');
+            // Continue validation - threshold score will determine if it's actual reselling
+        }
+
         // Log validation results (always log failures, muted in stealth mode for successes)
         $failedValidations = array_filter($validations, function($result) { return $result === false; });
         if (!empty($failedValidations)) {
@@ -110,15 +160,15 @@ class ProtectionManager
             Log::info('Protection validation results', $validations);
         }
 
-        // More lenient validation - allow some failures but require critical ones to pass
+        // More lenient validation - only truly critical validations must pass
+        // Critical: System security validation and vendor integrity (these are non-negotiable)
+        // Non-critical: Installation ID, hardware fingerprint, server communication (can change legitimately)
         $criticalValidations = [
             'helper' => $validations['helper'] ?? false,
-            'installation' => $validations['installation'] ?? false,
-            'tampering' => $validations['tampering'] ?? false,
             'vendor_integrity' => $validations['vendor_integrity'] ?? false,
         ];
 
-        // All critical validations must pass
+        // Critical validations must pass (helper license and vendor integrity)
         $failedCritical = array_filter($criticalValidations, function($result) { return $result === false; });
         if (!empty($failedCritical)) {
             Log::error('Critical protection validation failed', [
@@ -126,6 +176,24 @@ class ProtectionManager
                 'all_critical' => $criticalValidations
             ]);
             return false;
+        }
+        
+        // Non-critical validations are warnings only (don't fail validation)
+        // These can change legitimately: server migrations, hardware upgrades, network issues
+        $nonCriticalValidations = [
+            'installation' => $validations['installation'] ?? true,
+            'hardware' => $validations['hardware'] ?? true,
+            'server_communication' => $validations['server_communication'] ?? true,
+            'environment' => $validations['environment'] ?? true,
+        ];
+        
+        $failedNonCritical = array_filter($nonCriticalValidations, function($result) { return $result === false; });
+        if (!empty($failedNonCritical)) {
+            Log::warning('Non-critical protection validation warnings', [
+                'warnings' => array_keys($failedNonCritical),
+                'note' => 'These are warnings only - validation continues (legitimate changes allowed)',
+            ]);
+            // Don't fail - these are warnings only
         }
 
         // For non-critical validations, allow some failures but log them
@@ -225,17 +293,21 @@ class ProtectionManager
         // Allow small variations (up to 20% difference)
         $similarity = similar_text($storedFingerprint, $this->hardwareFingerprint, $percent);
         
-        // More lenient threshold - allow up to 30% difference instead of 80%
-        if ($percent < 70) {
+        // Lenient threshold - allow up to 50% difference for legitimate server migrations/upgrades
+        // This prevents false positives when clients move servers or upgrade hardware
+        $threshold = config('helpers.anti_reselling.lenient_mode', true) ? 50 : 70;
+        if ($percent < $threshold) {
             Log::warning('Hardware fingerprint changed significantly', [
                 'stored' => $storedFingerprint,
                 'current' => $this->hardwareFingerprint,
-                'similarity' => $percent
+                'similarity' => $percent,
+                'threshold' => $threshold
             ]);
             
             // If this is a significant change, update the stored fingerprint
             // This allows for legitimate hardware changes (server migration, etc.)
-            if ($percent > 50) { // Still reasonable similarity
+            // Even more lenient: allow 30% similarity for major but legitimate changes
+            if ($percent > 30) { // Reduced from 50 to 30 for more flexibility
                 Log::info('Updating hardware fingerprint due to significant but acceptable change', [
                     'old_similarity' => $percent,
                     'new_fingerprint' => $this->hardwareFingerprint
@@ -252,6 +324,8 @@ class ProtectionManager
 
     /**
      * Validate installation ID
+     * More lenient: allows installation ID changes (server migrations, fresh installs)
+     * Only logs warning instead of failing
      */
     public function validateInstallationId(): bool
     {
@@ -262,7 +336,21 @@ class ProtectionManager
             return true;
         }
 
-        return $storedId === $this->installationId;
+        if ($storedId !== $this->installationId) {
+            // Installation ID changed - could be legitimate (server migration, fresh install)
+            // Don't fail, but log warning for monitoring
+            Log::warning('Installation ID changed', [
+                'stored_id' => $storedId,
+                'current_id' => $this->installationId,
+                'note' => 'This may be legitimate (server migration, fresh install)',
+            ]);
+            
+            // Update stored ID to new one (allow the change)
+            Cache::put('installation_id', $this->installationId, now()->addDays(30));
+            return true; // Don't fail - allow installation ID changes
+        }
+
+        return true;
     }
 
     /**
@@ -383,12 +471,100 @@ class ProtectionManager
                     
                     if (!$storedHash) {
                         Cache::put($cacheKey, $currentHash, now()->addDays(30));
+                    } elseif ($storedHash === $currentHash) {
+                        // File hash matches - clear any tampering tracking if it exists
+                        $tamperingKey = 'vendor_tampering_' . md5($file);
+                        if (Cache::has($tamperingKey)) {
+                            Cache::forget($tamperingKey);
+                            
+                            // Remove from tampered files list
+                            $tamperedFiles = Cache::get('vendor_tampering_files', []);
+                            if (isset($tamperedFiles[$file])) {
+                                unset($tamperedFiles[$file]);
+                                Cache::put('vendor_tampering_files', $tamperedFiles, now()->addHours(49));
+                                
+                                Log::info('Vendor package file restored - tampering tracking cleared', [
+                                    'file' => $file,
+                                ]);
+                            }
+                        }
                     } elseif ($storedHash !== $currentHash) {
-                        Log::error('License package file tampering detected', [
-                            'file' => $file,
-                            'package_path' => $vendorPath
-                        ]);
-                        return false;
+                        // CRITICAL: File was modified - but give grace period (default 48 hours)
+                        $gracePeriodHours = config('helpers.vendor_protection.grace_period_hours', 48);
+                        $tamperingKey = 'vendor_tampering_' . md5($file);
+                        $firstDetected = Cache::get($tamperingKey);
+                        
+                        if (!$firstDetected) {
+                            // First time detected - start grace period
+                            $firstDetected = now()->toISOString();
+                            Cache::put($tamperingKey, $firstDetected, now()->addHours($gracePeriodHours + 1));
+                            
+                            // Track all tampered files
+                            $tamperedFiles = Cache::get('vendor_tampering_files', []);
+                            $tamperedFiles[$file] = $firstDetected;
+                            Cache::put('vendor_tampering_files', $tamperedFiles, now()->addHours($gracePeriodHours + 1));
+                            
+                            $gracePeriodEnds = Carbon::parse($firstDetected)->addHours($gracePeriodHours);
+                            
+                            Log::emergency('CRITICAL: Vendor package file tampering detected - grace period started', [
+                                'file' => $file,
+                                'package_path' => $vendorPath,
+                                'stored_hash' => substr($storedHash, 0, 16) . '...',
+                                'current_hash' => substr($currentHash, 0, 16) . '...',
+                                'grace_period_hours' => $gracePeriodHours,
+                                'grace_period_ends' => $gracePeriodEnds->toISOString(),
+                                'action' => 'grace_period_started',
+                            ]);
+                            
+                            // Report to license server immediately
+                            try {
+                                app(\InsuranceCore\Helpers\Services\RemoteSecurityLogger::class)->critical('Vendor File Tampering - Package Modified - Grace Period Started', [
+                                    'file' => $file,
+                                    'package_path' => $vendorPath,
+                                    'grace_period_hours' => $gracePeriodHours,
+                                    'grace_period_ends' => $gracePeriodEnds->toISOString(),
+                                ]);
+                            } catch (\Exception $e) {
+                                // Continue even if reporting fails
+                            }
+                        } else {
+                            // Check if grace period has expired
+                            $gracePeriodEnds = Carbon::parse($firstDetected)->addHours($gracePeriodHours);
+                            $hoursRemaining = now()->diffInHours($gracePeriodEnds, false);
+                            
+                            if ($hoursRemaining <= 0) {
+                                // Grace period expired - fail validation
+                                Log::emergency('CRITICAL: Vendor package file tampering - grace period expired - validation failed', [
+                                    'file' => $file,
+                                    'package_path' => $vendorPath,
+                                    'first_detected' => $firstDetected,
+                                    'grace_period_ended' => $gracePeriodEnds->toISOString(),
+                                    'action' => 'validation_failed',
+                                ]);
+                                
+                                // Report to license server
+                                try {
+                                    app(\InsuranceCore\Helpers\Services\RemoteSecurityLogger::class)->critical('Vendor File Tampering - Grace Period Expired - Validation Failed', [
+                                        'file' => $file,
+                                        'package_path' => $vendorPath,
+                                        'first_detected' => $firstDetected,
+                                    ]);
+                                } catch (\Exception $e) {
+                                    // Continue even if reporting fails
+                                }
+                                
+                                return false; // Fail after grace period
+                            } else {
+                                // Still in grace period - warn but don't fail
+                                Log::warning('Vendor package file tampering detected - grace period active', [
+                                    'file' => $file,
+                                    'package_path' => $vendorPath,
+                                    'hours_remaining' => $hoursRemaining,
+                                    'grace_period_ends' => $gracePeriodEnds->toISOString(),
+                                    'action' => 'grace_period_active',
+                                ]);
+                            }
+                        }
                     }
                 } catch (\Exception $e) {
                     // Skip files that can't be accessed due to permissions
@@ -401,8 +577,8 @@ class ProtectionManager
             }
         }
 
-        // Check for license middleware bypass attemptssss
-        // Verify that license middleware is registered (either as alias or directly)
+        // Check for security middleware bypass attempts
+        // Verify that security middleware is registered (either as alias or directly)
         $middlewareAliases = [];
         $router = app('router');
         if (is_callable([$router, 'getMiddleware'])) {
@@ -461,7 +637,7 @@ class ProtectionManager
         
         // CRITICAL: Fail validation if middleware is missing, commented out, or not executing
         if (!$hasLicenseMiddleware || !$middlewareExecuted || $middlewareCommented) {
-            Log::critical('License middleware bypass detected', [
+            Log::critical('Security middleware bypass detected', [
                 'middleware_registered' => $hasLicenseMiddleware,
                 'middleware_executing' => $middlewareExecuted,
                 'middleware_commented' => $middlewareCommented,
@@ -473,7 +649,7 @@ class ProtectionManager
             
             // Send critical alert to remote logger
             try {
-                app(\InsuranceCore\Helpers\Services\RemoteSecurityLogger::class)->critical('License Middleware Bypass Detected', [
+                app(\InsuranceCore\Helpers\Services\RemoteSecurityLogger::class)->critical('Security Middleware Bypass Detected', [
                     'middleware_registered' => $hasLicenseMiddleware,
                     'middleware_executing' => $middlewareExecuted,
                     'middleware_commented' => $middlewareCommented,
@@ -558,7 +734,7 @@ class ProtectionManager
             if (File::exists($kernelPath)) {
                 $kernelContent = File::get($kernelPath);
                 
-                // Check for commented out license middleware class names
+                // Check for commented out security middleware class names
                 $middlewareClasses = [
                     'AntiPiracySecurity',
                     'SecurityProtection',
@@ -578,7 +754,7 @@ class ProtectionManager
                                 if (str_starts_with($trimmedLine, '//') || 
                                     str_starts_with($trimmedLine, '*') ||
                                     str_starts_with($trimmedLine, '#')) {
-                                    Log::warning('License middleware appears to be commented out in Kernel.php', [
+                                    Log::warning('Security middleware appears to be commented out in Kernel.php', [
                                         'line' => $lineNum + 1,
                                         'line_content' => substr($trimmedLine, 0, 100)
                                     ]);
@@ -589,7 +765,7 @@ class ProtectionManager
                                 $beforeLine = substr($kernelContent, 0, strpos($kernelContent, $line));
                                 $commentBlocks = substr_count($beforeLine, '/*') - substr_count($beforeLine, '*/');
                                 if ($commentBlocks > 0) {
-                                    Log::warning('License middleware appears to be inside comment block in Kernel.php', [
+                                    Log::warning('Security middleware appears to be inside comment block in Kernel.php', [
                                         'line' => $lineNum + 1
                                     ]);
                                     return true;
@@ -620,7 +796,7 @@ class ProtectionManager
                                 if (str_starts_with($trimmedLine, '//') || 
                                     str_starts_with($trimmedLine, '*') ||
                                     str_starts_with($trimmedLine, '#')) {
-                                    Log::warning('License middleware appears to be commented out in bootstrap/app.php', [
+                                    Log::warning('Security middleware appears to be commented out in bootstrap/app.php', [
                                         'line' => $lineNum + 1
                                     ]);
                                     return true;
@@ -645,7 +821,7 @@ class ProtectionManager
                     if (preg_match('/\/\/\s*.*middleware.*license/i', $routesContent) ||
                         preg_match('/\/\/\s*.*middleware.*anti-piracy/i', $routesContent) ||
                         preg_match('/\/\/\s*.*middleware.*stealth/i', $routesContent)) {
-                        Log::warning('License middleware appears to be commented out in routes file', [
+                        Log::warning('Security middleware appears to be commented out in routes file', [
                             'file' => $routesFile
                         ]);
                         return true;
@@ -686,11 +862,16 @@ class ProtectionManager
         $lastValidation = Cache::get('last_validation_time');
         
         // Check for too frequent validations (potential automation)
+        // More lenient: only flag if extremely frequent (less than 1 second)
         if ($lastValidation) {
             $timeDiff = $currentTime->diffInSeconds($lastValidation);
-            if ($timeDiff < 5) { // Less than 5 seconds between validations
-                Log::warning('Suspicious validation frequency detected');
-                return false;
+            if ($timeDiff < 1) { // Less than 1 second between validations (was 5 seconds)
+                Log::warning('Suspicious validation frequency detected', [
+                    'time_diff' => $timeDiff,
+                    'note' => 'Very frequent validations - may be legitimate (load balancer, etc.)',
+                ]);
+                // Don't fail - just log warning
+                return true; // Allow frequent validations - may be legitimate
             }
         }
 
@@ -705,10 +886,16 @@ class ProtectionManager
             Cache::put('active_helpers_' . md5(config('helpers.helper_key')), $activeInstallations, now()->addHours(1));
         }
 
-        // Allow maximum 2 installations per license
-        if (count($activeInstallations) > 2) {
-            Log::error('Multiple installations detected for same license');
-            return false;
+        // Allow maximum 3 installations per license (more lenient - allows staging + production + dev)
+        $maxInstallations = config('helpers.anti_reselling.max_installations', 3);
+        if (count($activeInstallations) > $maxInstallations) {
+            Log::warning('Multiple installations detected for same license', [
+                'count' => count($activeInstallations),
+                'max_allowed' => $maxInstallations,
+                'note' => 'This may be legitimate (staging, production, dev environments)',
+            ]);
+            // Don't fail - use threshold score system instead
+            return true; // Allow multiple installations - let threshold score handle reselling detection
         }
 
         return true;
@@ -716,6 +903,8 @@ class ProtectionManager
 
     /**
      * Validate server communication
+     * More lenient: server communication failures don't fail validation
+     * Network issues, server downtime, etc. are legitimate reasons for failures
      */
     public function validateServerCommunication(): bool
     {
@@ -725,20 +914,27 @@ class ProtectionManager
         try {
             $response = Http::withHeaders([
                 'Authorization' => 'Bearer ' . $apiToken,
-            ])->timeout(10)->get("{$licenseServer}/api/heartbeat");
+            ])->timeout(5)->get("{$licenseServer}/api/heartbeat"); // Reduced timeout to 5 seconds
 
             if (!$response->successful()) {
-                Log::error('Helper server communication failed', [
+                // Server communication failed - but don't fail validation
+                // Network issues, server downtime are legitimate
+                Log::warning('Server communication failed (non-critical)', [
                     'status' => $response->status(),
-                    'body' => $response->body()
+                    'body' => substr($response->body(), 0, 100),
+                    'note' => 'This is a warning only - validation continues',
                 ]);
-                return false;
+                return true; // Don't fail - allow network/server issues
             }
 
             return true;
         } catch (\Exception $e) {
-            Log::error('Helper server communication error: ' . $e->getMessage());
-            return false;
+            // Server unreachable - but don't fail validation
+            // Network issues, server downtime are legitimate
+            Log::warning('Server communication error (non-critical): ' . $e->getMessage(), [
+                'note' => 'This is a warning only - validation continues',
+            ]);
+            return true; // Don't fail - allow network/server issues
         }
     }
 
@@ -803,6 +999,9 @@ class ProtectionManager
      */
     public function validateInStealthMode(): bool
     {
+        // Initialize validation results for stealth mode
+        $validations = [];
+        
         try {
             // Check if we have recent cached validation
             $cacheKey = 'stealth_cache_' . md5(request()->getHost() ?? 'unknown');
@@ -812,54 +1011,77 @@ class ProtectionManager
                 $cacheTime = Carbon::parse($cachedResult['timestamp']);
                 // Use cache for 15 minutes in stealth mode
                 if ($cacheTime->addMinutes(15)->isFuture()) {
+                    // Store cached result in validation results
+                    $validations['helper'] = $cachedResult['valid'];
+                    $validations['stealth_cached'] = true;
+                    $this->lastValidationResults = $validations;
                     return $cachedResult['valid'];
                 }
             }
 
-            // Quick license validation with minimal server communication
+            // Quick security validation with minimal server communication
             $licenseValid = $this->validateHelper();
+            $validations['helper'] = $licenseValid;
             
             // In stealth mode, trust cached state if server is unreachable
             if (!$licenseValid) {
                 // Check if server is unreachable
                 if ($this->isServerUnreachable()) {
                     // Allow access with grace period
-                    return $this->checkGracePeriodInStealth();
+                    $gracePeriodValid = $this->checkGracePeriodInStealth();
+                    $validations['helper'] = $gracePeriodValid;
+                    $validations['grace_period'] = $gracePeriodValid;
+                    $this->lastValidationResults = $validations;
+                    return $gracePeriodValid;
                 }
             }
 
+            // Store validation results
+            $this->lastValidationResults = $validations;
+            
             // Cache the result
             Cache::put($cacheKey, [
                 'valid' => $licenseValid,
                 'timestamp' => now(),
             ], now()->addMinutes(20));
 
-            // Log only to separate channel for admin review
-            if (!config('helpers.stealth.mute_logs', true)) {
-                Log::channel('license')->info('Stealth mode validation', [
-                    'valid' => $licenseValid,
-                    'domain' => request()->getHost(),
-                    'timestamp' => now(),
-                ]);
-            }
+            // Don't log to separate files - use remote logging only to avoid exposing package
+            // Separate log files in storage/logs/ are accessible to clients
 
             return $licenseValid;
 
         } catch (\Exception $e) {
-            // Silent failure - allow access and log for admin
-            if (config('helpers.stealth.silent_fail', true)) {
-                Log::channel('license')->error('Stealth validation error', [
-                    'error' => $e->getMessage(),
-                    'domain' => request()->getHost(),
-                ]);
-                
-                return $this->checkGracePeriodInStealth();
-            }
+            // Store exception in validation results
+            $validations['helper'] = false;
+            $validations['exception'] = $e->getMessage();
+            $this->lastValidationResults = $validations;
             
-            return false;
+            // Silent failure - only remote logging, no local files to avoid exposure
+            // Local log files can be accessed by clients
+            
+            return $this->checkGracePeriodInStealth();
         }
     }
-
+    
+    /**
+     * Check if validation should be skipped based on environment
+     * Simple automatic detection: Only enforce in production
+     * Local/dev/testing automatically skip (no config needed)
+     */
+    protected function shouldSkipEnvironmentChecks(): bool
+    {
+        $environment = strtolower(config('app.env', 'production'));
+        
+        // Only enforce in production - all other environments skip automatically
+        // This is automatic - no configuration needed
+        if ($environment === 'production') {
+            return false; // Enforce checks in production
+        }
+        
+        // Skip in all non-production environments (local, dev, testing, staging, etc.)
+        return true; // Skip checks in non-production
+    }
+    
     /**
      * Check if license server is unreachable
      */

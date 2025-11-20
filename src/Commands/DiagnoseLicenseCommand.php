@@ -11,7 +11,7 @@ use InsuranceCore\Helpers\Helper;
 class DiagnoseLicenseCommand extends Command
 {
     protected $signature = 'helpers:diagnose {--fix : Attempt to fix common issues}';
-    protected $description = 'Diagnose helper validation issues';
+    protected $description = 'Diagnose system validation issues';
 
     public function handle()
     {
@@ -30,7 +30,7 @@ class DiagnoseLicenseCommand extends Command
         // Check hardware fingerprint
         $this->checkHardwareFingerprint($issues, $fixes);
 
-        // Check helper validation
+        // Check system validation
         $this->checkHelperValidation($issues, $fixes);
 
         // Check protection validation
@@ -121,7 +121,7 @@ class DiagnoseLicenseCommand extends Command
 
     public function checkHelperValidation(&$issues, &$fixes)
     {
-        $this->info('🔐 Checking Helper Validation...');
+        $this->info('🔐 Checking System Validation...');
 
         try {
             $helper = app(Helper::class);
@@ -134,14 +134,14 @@ class DiagnoseLicenseCommand extends Command
             $isValid = $helper->validateHelper($helperKey, $productId, $domain, $ip, $clientId);
             
             if ($isValid) {
-                $this->line("✅ Helper validation: Success");
+                $this->line("✅ System validation: Success");
             } else {
-                $issues[] = "❌ Helper validation: Failed";
-                $fixes[] = "Check helper server connectivity and helper key validity";
+                $issues[] = "❌ System validation: Failed";
+                $fixes[] = "Check server connectivity and system key validity";
             }
         } catch (\Exception $e) {
-            $issues[] = "❌ Helper validation error: " . $e->getMessage();
-            $fixes[] = "Check network connectivity to helper server";
+            $issues[] = "❌ System validation error: " . $e->getMessage();
+            $fixes[] = "Check network connectivity to server";
         }
     }
 

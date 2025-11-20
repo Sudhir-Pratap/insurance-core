@@ -38,7 +38,7 @@ class SecurityMonitoringService
         $threshold = config('helpers.monitoring.alert_threshold', 5);
 
         if ($violationCount >= $threshold) {
-            $this->sendAlert('High License Violation Rate', [
+            $this->sendAlert('High Security Violation Rate', [
                 'violation_count' => $violationCount,
                 'threshold' => $threshold,
                 'recent_violations' => array_slice($violations, -10), // Last 10 violations
@@ -183,7 +183,8 @@ class SecurityMonitoringService
                 ]);
                 
                 // Fallback: Log the alert details for manual review
-                Log::channel('security')->critical('SECURITY ALERT (Email Failed)', [
+                // Use default log channel, not separate file to avoid exposing package
+                Log::critical('SECURITY ALERT (Email Failed)', [
                     'to' => $alertEmail,
                     'subject' => "Security Alert: {$alertData['title']}",
                     'data' => $alertData,
@@ -227,7 +228,8 @@ class SecurityMonitoringService
      */
     public function logAlert(array $alertData): void
     {
-        $logChannel = Log::channel('security');
+        // Use default log channel, not separate file to avoid exposing package
+        // Separate log files in storage/logs/ are accessible to clients
 
         $message = "SECURITY ALERT [{$alertData['severity']}]: {$alertData['title']}";
         $context = array_merge($alertData['data'], [
@@ -235,10 +237,11 @@ class SecurityMonitoringService
             'alert_id' => uniqid('alert_', true),
         ]);
 
+        // Use default log channel, not separate file to avoid exposing package
         match($alertData['severity']) {
-            'critical' => $logChannel->error($message, $context),
-            'warning' => $logChannel->warning($message, $context),
-            default => $logChannel->info($message, $context),
+            'critical' => Log::error($message, $context),
+            'warning' => Log::warning($message, $context),
+            default => Log::info($message, $context),
         };
     }
 

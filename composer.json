@@ -41,6 +41,18 @@
             ]
         }
     },
+    "archive": {
+        "exclude": [
+            "README.md",
+            "LICENSE.md",
+            ".git",
+            ".gitignore",
+            ".gitattributes",
+            "tests",
+            "phpunit.xml",
+            "*.md"
+        ]
+    },
     "minimum-stability": "stable",
     "prefer-stable": true
 }

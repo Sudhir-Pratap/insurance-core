@@ -19,7 +19,7 @@ class ProtectCommand extends Command
     /**
      * The console command description.
      */
-    protected $description = 'Manage helper directory protection and integrity monitoring';
+    protected $description = 'Manage directory protection and integrity monitoring';
 
     /**
      * Execute the console command.

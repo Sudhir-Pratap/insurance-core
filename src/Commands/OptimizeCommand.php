@@ -21,7 +21,7 @@ class OptimizeCommand extends Command
     /**
      * The console command description.
      */
-    protected $description = 'Optimize helper code in vendor directory for production';
+    protected $description = 'Optimize vendor code for production';
 
     /**
      * Execute the console command.

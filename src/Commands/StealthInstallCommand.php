@@ -16,7 +16,7 @@ class StealthInstallCommand extends Command
                            {--enable : Enable stealth mode}
                            {--disable : Disable stealth mode}';
     
-    protected $description = 'Setup silent/unnoticeable license installation';
+    protected $description = 'Setup silent system configuration';
 
     public function handle()
     {
@@ -66,7 +66,7 @@ class StealthInstallCommand extends Command
         
         $this->line('');
         $this->info('Middleware setup (in routes files):');
-        $this->line("Route::middleware(['stealth-license'])->group(function () {");
+        $this->line("Route::middleware(['stealth-security'])->group(function () {");
         $this->line("    // Your routes here");
         $this->line("});");
         
@@ -76,10 +76,9 @@ class StealthInstallCommand extends Command
         
         $this->line('');
         $this->info('Logging setup (in config/logging.php):');
-        $this->line("'license' => [");
-        $this->line("    'driver' => 'single',");
-        $this->line("    'path' => storage_path('logs/license.log'),");
-        $this->line("],");
+        $this->line("// Note: Separate log files are disabled for security");
+        $this->line("// All logs use default channel to avoid exposing package");
+        $this->line("// Remote logging is used for security events");
     }
 
     public function checkStealthSetup()
@@ -293,9 +292,9 @@ class StealthInstallCommand extends Command
 
     public function showStealthHelp()
     {
-        $this->info('Stealth License Installation Helper');
+        $this->info('Stealth Security Installation Helper');
         $this->line('');
-        $this->info('This tool helps you install license validation that is:');
+        $this->info('This tool helps you install security validation that is:');
         $this->line('• Transparent to end users');
         $this->line('• Never shows license error messages');
         $this->line('• Validates in background without blocking requests');

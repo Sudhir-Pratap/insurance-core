@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\Log;
 class ClearCacheCommand extends Command
 {
     protected $signature = 'helpers:clear-cache {--force : Force reset without confirmation}';
-    protected $description = 'Clear helper cache and system identifiers';
+    protected $description = 'Clear system cache and identifiers';
 
     public function handle()
     {

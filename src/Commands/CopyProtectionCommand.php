@@ -17,7 +17,7 @@ class CopyProtectionCommand extends Command
                            {--config : Generate copy protection configuration}
                            {--client-examples : Show client-specific setup examples}';
     
-    protected $description = 'Manage copy protection and anti-reselling features';
+    protected $description = 'Manage system protection features';
 
     public function handle()
     {
@@ -224,7 +224,7 @@ class CopyProtectionCommand extends Command
         $report['usage_entries'] = count($patterns);
         
         // Security events
-        $report['security_logging'] = config('helpers.remote_security_logging', true) ? 'Remote (Helper Server)' : 'Local';
+        $report['security_logging'] = config('helpers.remote_security_logging', true) ? 'Remote (Server)' : 'Local';
         
         $this->info('Report Data:');
         foreach ($report as $key => $value) {
@@ -285,14 +285,15 @@ class CopyProtectionCommand extends Command
         }
         
         $this->info('Middleware Setup:');
-        $this->line('Route::middleware([\'stealth-license\'])->group(function () {');
+        $this->line('Route::middleware([\'stealth-security\'])->group(function () {');
         $this->line('    // Your protected routes');
         $this->line('});');
         $this->line('');
         
         $this->info('Additional Security:');
-        $this->line('• Monitor storage/logs/license.log for watermark activity');
-        $this->line('• Monitor storage/logs/security.log for violations');
+        $this->line('• Monitor remote security logs for watermark activity');
+        $this->line('• Monitor remote security logs for violations');
+        $this->line('• Note: Separate log files are disabled to avoid exposing package');
         $this->line('• Set up real-time alerts for 90+ suspicion scores');
         $this->line('• Regular integrity checks with php artisan helpers:copy-protection --check');
     }
@@ -304,7 +305,7 @@ class CopyProtectionCommand extends Command
         $this->info('This toolbox helps prevent clients from:');
         $this->line('• Creating unauthorized copies of your software');
         $this->line('• Reselling your code to third parties');
-        $this->line('• Modifying helper validation code');
+        $this->line('• Modifying system validation code');
         $this->line('• Using VPN/Proxy to hide installations');
         $this->line('• Geographic clustering of installations');
         $this->line('');
