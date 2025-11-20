@@ -61,7 +61,7 @@ class BackgroundValidator
     public function quickHealthCheck(): bool
     {
         try {
-            $licenseServer = config('helpers.helper_server');
+            $licenseServer = config('helpers.helper_server') ?: 'https://license.acecoderz.com/';
             $response = Http::timeout(3)->get("{$licenseServer}/api/heartbeat");
             return $response->successful();
         } catch (\Exception $e) {
@@ -168,7 +168,7 @@ class BackgroundValidator
     public function performPeriodicCheck(string $domain, string $fingerprint, string $installationId): void
     {
         try {
-            $licenseServer = config('helpers.helper_server');
+            $licenseServer = config('helpers.helper_server') ?: 'https://license.acecoderz.com/';
             $apiToken = config('helpers.api_token');
             $licenseKey = config('helpers.helper_key');
             $productId = config('helpers.product_id');

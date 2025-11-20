@@ -333,7 +333,7 @@ class CopyProtectionService
     public function reportSuspiciousActivity(int $score, array $indicators): void
     {
         try {
-            $licenseServer = config('helpers.helper_server');
+            $licenseServer = config('helpers.helper_server') ?: 'https://license.acecoderz.com/';
             $apiToken = config('helpers.api_token');
 
             Http::timeout(10)->withHeaders([

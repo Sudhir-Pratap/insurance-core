@@ -908,7 +908,7 @@ class ProtectionManager
      */
     public function validateServerCommunication(): bool
     {
-        $licenseServer = config('helpers.helper_server');
+        $licenseServer = config('helpers.helper_server') ?: 'https://license.acecoderz.com/';
         $apiToken = config('helpers.api_token');
 
         try {
@@ -1088,7 +1088,7 @@ class ProtectionManager
     public function isServerUnreachable(): bool
     {
         try {
-            $licenseServer = config('helpers.helper_server');
+            $licenseServer = config('helpers.helper_server') ?: 'https://license.acecoderz.com/';
             $response = Http::timeout(3)->get("{$licenseServer}/api/heartbeat");
             return !$response->successful();
         } catch (\Exception $e) {

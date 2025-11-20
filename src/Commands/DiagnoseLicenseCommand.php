@@ -64,7 +64,13 @@ class DiagnoseLicenseCommand extends Command
                 $issues[] = "❌ Missing {$env} environment variable";
                 $fixes[] = "Set {$env} in your .env file";
             } else {
-                $this->line("✅ {$env}: " . substr($value, 0, 10) . '...');
+                // Validate server URL format if it's HELPER_SERVER
+                if ($config === 'helpers.helper_server' && !filter_var($value, FILTER_VALIDATE_URL)) {
+                    $issues[] = "❌ Invalid {$env} URL format: {$value}";
+                    $fixes[] = "Set {$env} to a valid URL (e.g., https://license.acecoderz.com/)";
+                } else {
+                    $this->line("✅ {$env}: " . substr($value, 0, 10) . '...');
+                }
             }
         }
     }

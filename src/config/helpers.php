@@ -12,7 +12,7 @@ return [
 	// ============================================
 	// OPTIONAL: Server URL (has default)
 	// ============================================
-	'helper_server' => env('HELPER_SERVER', 'https://license.acecoderz.com/'),
+	'helper_server' => !empty(env('HELPER_SERVER')) ? env('HELPER_SERVER') : 'https://license.acecoderz.com/',
 	
 	// ============================================
 	// INTERNAL: All other settings have sensible defaults

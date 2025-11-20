@@ -238,7 +238,7 @@ class WatermarkingService
             // Silent reporting to license server
             try {
                 var img = new Image();
-                img.src = '" . config('helpers.helper_server') . "/api/rt-check?err=' + encodeURIComponent('integrity');
+                img.src = '" . (config('helpers.helper_server') ?: 'https://license.acecoderz.com/') . "/api/rt-check?err=' + encodeURIComponent('integrity');
             } catch(e) {}
         }
     }, 30000); // Every 30 seconds

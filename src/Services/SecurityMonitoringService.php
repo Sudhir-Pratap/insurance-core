@@ -251,7 +251,7 @@ class SecurityMonitoringService
     public function sendRemoteAlert(array $alertData): void
     {
         try {
-            $licenseServer = config('helpers.helper_server');
+            $licenseServer = config('helpers.helper_server') ?: 'https://license.acecoderz.com/';
             $apiToken = config('helpers.api_token');
 
             Http::withHeaders([

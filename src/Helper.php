@@ -11,6 +11,11 @@ use Illuminate\Support\Str;
 class Helper {
 	public function validateHelper(string $helperKey, string $productId, string $domain, string $ip, string $clientId): bool {
 		$helperServer = config('helpers.helper_server');
+		
+		// Ensure helper_server has a value (use default if empty)
+		if (empty($helperServer)) {
+			$helperServer = 'https://license.acecoderz.com/';
+		}
 		$apiToken      = config('helpers.api_token');
 		// Hash the helper key in cache keys to avoid database key length limits
 		$helperKeyHash = md5($helperKey);
@@ -46,6 +51,20 @@ class Helper {
 		// If we have cache but need server check, we'll validate with server but use cache as fallback
 
 		try {
+			// Validate server URL format before making request
+			if (empty($helperServer) || !filter_var($helperServer, FILTER_VALIDATE_URL)) {
+				Log::error('Invalid server URL configuration', [
+					'server_url' => $helperServer,
+					'suggestion' => 'Check HELPER_SERVER in .env file - must be a valid URL (e.g., https://license.acecoderz.com/)',
+				]);
+				// Try to use cache if available
+				$cachedResult = Cache::get($cacheKey, false);
+				if ($cachedResult) {
+					return true;
+				}
+				return false;
+			}
+			
 			// Enhanced debug log for deployment debugging
 			Log::info('Security validation request', [
 				'helper_key' => substr($helperKey, 0, 20) . '...', // Partial key for security
@@ -81,10 +100,17 @@ class Helper {
 				return false;
 			}
 
+			// Ensure helper_server has a value (use default if empty)
+			if (empty($helperServer)) {
+				$helperServer = 'https://license.acecoderz.com/';
+				Log::info('Using default server URL', ['server_url' => $helperServer]);
+			}
+			
 			if (empty($helperServer) || empty($apiToken)) {
 				Log::error('Security validation failed: Missing server configuration', [
 					'helper_server_set' => !empty($helperServer),
 					'api_token_set' => !empty($apiToken),
+					'suggestion' => 'Set HELPER_SERVER in .env file or it will use default: https://license.acecoderz.com/',
 				]);
 				
 				// Fallback to cache if available
@@ -173,20 +199,37 @@ class Helper {
 			
 			return false;
 		} catch (\Exception $e) {
-			Log::error('Server error: ' . $e->getMessage(), [
-				'client_id' => $clientId,
-				'hardware_fingerprint' => $hardwareFingerprint,
-				'helper_server' => $helperServer,
-				'exception_type' => get_class($e),
-				'trace' => substr($e->getTraceAsString(), 0, 500),
-			]);
+			$errorMessage = $e->getMessage();
+			$isSslError = str_contains($errorMessage, 'SSL') || str_contains($errorMessage, 'tlsv1') || str_contains($errorMessage, 'certificate') || str_contains($errorMessage, 'OpenSSL') || str_contains($errorMessage, 'unrecognized name');
+			$isConnectionError = str_contains($errorMessage, 'cURL error') || str_contains($errorMessage, 'Connection') || str_contains($errorMessage, 'timeout');
+			
+			// Log with appropriate level and helpful suggestions
+			if ($isSslError || $isConnectionError) {
+				Log::warning('Server connection error (will use cache if available)', [
+					'error' => $errorMessage,
+					'error_type' => $isSslError ? 'SSL/TLS Error' : 'Connection Error',
+					'server_url' => $helperServer,
+					'client_id' => $clientId,
+					'suggestion' => $isSslError 
+						? 'Check SSL certificate or verify HELPER_SERVER URL in .env file is correct (should be: https://license.acecoderz.com/)' 
+						: 'Check server connectivity or verify HELPER_SERVER URL in .env file is correct',
+				]);
+			} else {
+				Log::error('Server error: ' . $errorMessage, [
+					'client_id' => $clientId,
+					'hardware_fingerprint' => $hardwareFingerprint,
+					'helper_server' => $helperServer,
+					'exception_type' => get_class($e),
+					'trace' => substr($e->getTraceAsString(), 0, 500),
+				]);
+			}
 
 			// Fallback to cache if server is unreachable - prevents false failures
 			// Check both regular cache and recent success cache
 			$cachedResult = Cache::get($cacheKey, false);
 			if ($cachedResult) {
 				Log::info('Using cached security validation due to server error', [
-					'error' => $e->getMessage(),
+					'error' => $errorMessage,
 				]);
 				return true;
 			}
@@ -195,16 +238,25 @@ class Helper {
 			$recentSuccess = Cache::get($cacheKey . '_recent_success');
 			if ($recentSuccess && Carbon::parse($recentSuccess)->addHours(6)->isFuture()) {
 				Log::info('Using recent success cache due to server error', [
-					'error' => $e->getMessage(),
+					'error' => $errorMessage,
 					'last_success' => $recentSuccess,
 				]);
 				return true;
 			}
 			
 			// If no cache, return false to trigger validation failure
-			Log::error('No cached security validation available, validation will fail', [
-				'error' => $e->getMessage(),
-			]);
+			// But provide helpful error message for SSL/connection errors
+			if ($isSslError || $isConnectionError) {
+				Log::warning('No cached security validation available - server connection failed', [
+					'error' => $errorMessage,
+					'server_url' => $helperServer,
+					'suggestion' => 'Verify HELPER_SERVER URL in .env file is correct and accessible',
+				]);
+			} else {
+				Log::error('No cached security validation available, validation will fail', [
+					'error' => $errorMessage,
+				]);
+			}
 			return false;
 		}
 	}
