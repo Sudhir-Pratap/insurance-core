@@ -11,7 +11,7 @@ class ClientFriendlyCommand extends Command
                            {--check : Check if installation is operating normally}
                            {--test : Test system functionality}';
     
-    protected $description = 'Display system status information';
+    protected $description = 'Display system status information. Use "php artisan helpers:diagnose" to check validation status.';
 
     public function handle()
     {

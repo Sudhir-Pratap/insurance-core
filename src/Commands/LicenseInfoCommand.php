@@ -8,7 +8,7 @@ use Illuminate\Console\Command;
 class LicenseInfoCommand extends Command
 {
     protected $signature = 'helpers:info';
-    protected $description = 'Display system information and identifiers';
+    protected $description = 'Display system information and identifiers. Use "php artisan helpers:diagnose" to check validation status.';
 
     public function handle()
     {

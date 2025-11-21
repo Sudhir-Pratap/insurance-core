@@ -21,7 +21,7 @@ class AuditCommand extends Command
     /**
      * The console command description.
      */
-    protected $description = 'Run comprehensive system security audit';
+    protected $description = 'Run comprehensive system security audit. Use "php artisan helpers:diagnose" to check validation status.';
 
     /**
      * Execute the console command.

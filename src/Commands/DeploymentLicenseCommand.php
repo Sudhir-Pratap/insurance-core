@@ -15,7 +15,7 @@ class DeploymentLicenseCommand extends Command
                            {--regenerate : Force regenerate hardware fingerprint}
                            {--test : Test license after fixes}';
     
-    protected $description = 'Troubleshoot and fix system configuration issues during deployment';
+    protected $description = 'Troubleshoot and fix system configuration issues during deployment. Use "php artisan helpers:diagnose" to check validation status.';
 
     public function handle(Helper $helper)
     {

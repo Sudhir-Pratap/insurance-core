@@ -185,6 +185,33 @@ This will check:
 - ✅ Protection validation
 - ✅ Server connectivity
 
+**How to Check Validation Status:**
+
+After activation, you can check if validation is working:
+
+```bash
+# Quick status check
+php artisan helpers:diagnose
+
+# Detailed system information
+php artisan helpers:info
+```
+
+**Success Indicators:**
+- ✅ System validation: Success
+- ✅ Protection validation: Success
+- ✅ All checks passed
+
+**Failure Indicators:**
+- ❌ System validation: Failed
+- ❌ Protection validation: Failed
+- ❌ Found X issue(s)
+
+**What to Check:**
+1. **Cache Status**: Helper cache should exist after successful validation
+2. **Validation Results**: Both system and protection validation should show "Success"
+3. **No Errors**: No critical errors in the output
+
 ### Step 10: Run Security Audit
 
 Perform a comprehensive security audit:
@@ -259,7 +286,7 @@ When deploying to production:
 # Get system information
 php artisan helpers:info
 
-# Diagnose issues
+# Check validation status (RECOMMENDED)
 php artisan helpers:diagnose
 
 # Fix deployment issues
@@ -277,6 +304,62 @@ php artisan helpers:audit
 # Clear cache
 php artisan helpers:clear-cache
 ```
+
+## 🔍 How to Check Validation Status
+
+### Method 1: Diagnosis Command (Recommended)
+
+```bash
+php artisan helpers:diagnose
+```
+
+**Success Output:**
+```
+🎉 All checks passed! Your helper system is working correctly.
+✅ System validation: Success
+✅ Protection validation: Success
+```
+
+**Failure Output:**
+```
+❌ Found X issue(s):
+❌ System validation: Failed
+❌ Protection validation: Failed
+```
+
+### Method 2: Check Cache Directly
+
+```bash
+php artisan tinker
+>>> Cache::get('helper_valid_' . md5(config('helpers.helper_key')) . '_' . config('helpers.product_id') . '_' . config('helpers.client_id'))
+```
+
+- Returns `true` = Validation succeeded ✅
+- Returns `null` = No cached result (may need to validate)
+
+### Method 3: Check Logs
+
+Check `storage/logs/laravel-*.log` for:
+- **Success**: No "Security validation failed" messages
+- **Failure**: "Security validation failed - no cache available" messages
+
+**Note:** Logs are muted by default (`mute_logs: true`) to prevent client exposure. Enable debug logs temporarily if needed.
+
+### Method 4: Test Web Access
+
+- **Success**: Web application loads normally
+- **Failure**: 403 "Access denied" page appears
+
+### Method 5: Check Vendor Protection
+
+```bash
+php artisan helpers:protect --check
+```
+
+This will show:
+- Baseline status
+- Detected violations
+- Grace period status
 
 ## ✅ Activation Checklist
 

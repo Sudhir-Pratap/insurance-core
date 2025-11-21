@@ -11,7 +11,7 @@ use InsuranceCore\Helpers\Helper;
 class DiagnoseLicenseCommand extends Command
 {
     protected $signature = 'helpers:diagnose {--fix : Attempt to fix common issues}';
-    protected $description = 'Diagnose system validation issues';
+    protected $description = 'Check validation status and diagnose system validation issues. This is the recommended way to verify if validation is working correctly.';
 
     public function handle()
     {
@@ -178,6 +178,8 @@ class DiagnoseLicenseCommand extends Command
 
         if (empty($issues)) {
             $this->info('🎉 All checks passed! Your helper system is working correctly.');
+            $this->newLine();
+            $this->comment('💡 Tip: Run this command regularly to check validation status.');
         } else {
             $this->error('❌ Found ' . count($issues) . ' issue(s):');
             foreach ($issues as $issue) {
@@ -191,6 +193,8 @@ class DiagnoseLicenseCommand extends Command
                     $this->line("• {$fix}");
                 }
             }
+            $this->newLine();
+            $this->comment('💡 Tip: Run "php artisan helpers:diagnose --fix" to attempt automatic fixes.');
         }
     }
 
