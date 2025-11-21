@@ -61,7 +61,7 @@ return [
 		'mute_logs' => true,
 		'background_validation' => true,
 		'validation_timeout' => 5,
-		'fallback_grace_period' => 72,
+		'fallback_grace_period' => 0, // Disabled for testing - set to 0 to block immediately on failure
 		'silent_fail' => true,
 		'deferred_enforcement' => true,
 	],

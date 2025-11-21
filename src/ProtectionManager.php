@@ -397,9 +397,53 @@ class ProtectionManager
                     'violations' => $violations
                 ]);
 
-                // If there are critical violations, fail validation
+                // If there are critical or high severity violations, fail validation
+                // All vendor tampering is serious - no leniency
                 if (count($criticalViolations) > 0) {
-                    return false;
+                    // Check grace period before failing
+                    $tamperingFiles = Cache::get('vendor_tampering_files', []);
+                    $gracePeriodHours = config('helpers.vendor_protection.grace_period_hours', 48);
+                    
+                    // Track this violation
+                    foreach ($criticalViolations as $violation) {
+                        if (isset($violation['file'])) {
+                            $file = $violation['file'];
+                            if (!isset($tamperingFiles[$file])) {
+                                $tamperingFiles[$file] = now()->toISOString();
+                            }
+                        }
+                    }
+                    Cache::put('vendor_tampering_files', $tamperingFiles, now()->addDays(7));
+                    
+                    // If grace period is disabled (0 hours), fail immediately
+                    if ($gracePeriodHours <= 0) {
+                        Log::emergency('CRITICAL: Vendor package tampering detected - grace period disabled - validation failed immediately', [
+                            'violations' => $criticalViolations,
+                            'grace_period_hours' => $gracePeriodHours,
+                        ]);
+                        return false; // Fail immediately if grace period is disabled
+                    }
+                    
+                    // Check if grace period has expired
+                    foreach ($tamperingFiles as $file => $firstDetected) {
+                        $gracePeriodEnds = Carbon::parse($firstDetected)->addHours($gracePeriodHours);
+                        if (now()->greaterThan($gracePeriodEnds)) {
+                            Log::emergency('CRITICAL: Vendor package tampering - grace period expired - validation failed', [
+                                'file' => $file,
+                                'first_detected' => $firstDetected,
+                                'grace_period_ended' => $gracePeriodEnds->toISOString(),
+                            ]);
+                            return false; // Fail after grace period expires
+                        }
+                    }
+                    
+                    // Still in grace period - log warning but don't fail yet
+                    Log::warning('Vendor package tampering detected - grace period active - will fail after grace period', [
+                        'grace_period_hours' => $gracePeriodHours,
+                        'violations' => $criticalViolations,
+                    ]);
+                    
+                    return true; // Allow during grace period
                 }
 
                 // For non-critical violations, be lenient (just log)
@@ -1027,13 +1071,14 @@ class ProtectionManager
             if (!$licenseValid) {
                 // Check if server is unreachable
                 if ($this->isServerUnreachable()) {
-                    // Allow access with grace period
+                    // Check grace period (returns false if disabled)
                     $gracePeriodValid = $this->checkGracePeriodInStealth();
                     $validations['helper'] = $gracePeriodValid;
                     $validations['grace_period'] = $gracePeriodValid;
                     $this->lastValidationResults = $validations;
                     return $gracePeriodValid;
                 }
+                // If server is reachable but validation failed, fail immediately (no grace period)
             }
 
             // Store validation results
@@ -1101,18 +1146,24 @@ class ProtectionManager
      */
     public function checkGracePeriodInStealth(): bool
     {
+        $graceHours = config('helpers.stealth.fallback_grace_period', 0);
+        
+        // If grace period is 0 or disabled, always return false (block immediately)
+        if ($graceHours <= 0) {
+            return false;
+        }
+        
         $graceKey = 'stealth_grace_' . md5(request()->getHost() ?? 'unknown');
         $graceStart = Cache::get($graceKey);
         
         if (!$graceStart) {
-            // Start grace period (72 hours default)
-            $graceHours = config('helpers.stealth.fallback_grace_period', 72);
+            // Start grace period
             Cache::put($graceKey, now(), now()->addHours($graceHours + 1));
             
             return true;
         }
         
-        $graceEnd = Carbon::parse($graceStart)->addHours(config('helpers.stealth.fallback_grace_period', 72));
+        $graceEnd = Carbon::parse($graceStart)->addHours($graceHours);
         return now()->isBefore($graceEnd);
     }
 } 

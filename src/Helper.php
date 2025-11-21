@@ -64,24 +64,6 @@ class Helper {
 				}
 				return false;
 			}
-			
-			// Enhanced debug log for deployment debugging
-			Log::info('Security validation request', [
-				'helper_key' => substr($helperKey, 0, 20) . '...', // Partial key for security
-				'product_id' => $productId,
-				'domain' => $domain,
-				'ip' => $ip,
-				'client_id' => $originalClientId,
-				'hardware_fingerprint' => $hardwareFingerprint ? substr($hardwareFingerprint, 0, 16) . '...' : 'NULL',
-				'installation_id' => $installationId,
-				'checksum' => substr($checksum, 0, 16) . '...',
-				'full_checksum' => $checksum, // Full checksum for debugging
-				'crypto_key_set' => !empty($cryptoKey) ? 'YES' : 'NO',
-				'input_string' => substr($helperKey, 0, 20) . '...' . $productId . $originalClientId . ($hardwareFingerprint ? substr($hardwareFingerprint, 0, 16) . '...' : 'NULL'),
-				'helper_server' => $helperServer,
-				'environment' => config('app.env'),
-				'deployment_context' => request()->header('X-Deployment-Context'),
-			]);
 
 			// Validate required config values
 			if (empty($helperKey) || empty($productId) || empty($originalClientId)) {
@@ -109,6 +91,44 @@ class Helper {
 			// Normalize URL: remove trailing slashes to avoid double slashes
 			$helperServer = rtrim($helperServer, '/');
 			
+			// Construct validation URL after normalization
+			$validationUrl = "{$helperServer}/api/validate";
+			
+			// Only log validation request if mute_logs is disabled (for debugging)
+			// In production, use remote logging only to avoid exposing package to clients
+			if (!config('helpers.stealth.mute_logs', true)) {
+				Log::info('Security validation request', [
+					'helper_key' => substr($helperKey, 0, 20) . '...', // Partial key for security
+					'product_id' => $productId,
+					'domain' => $domain,
+					'ip' => $ip,
+					'client_id' => $originalClientId,
+					'hardware_fingerprint' => $hardwareFingerprint ? substr($hardwareFingerprint, 0, 16) . '...' : 'NULL',
+					'installation_id' => $installationId,
+					'checksum' => substr($checksum, 0, 16) . '...',
+					'full_checksum' => $checksum, // Full checksum for debugging
+					'crypto_key_set' => !empty($cryptoKey) ? 'YES' : 'NO',
+					'crypto_key_source' => env('HELPER_SECRET') ? 'HELPER_SECRET' : (env('LICENSE_SECRET') ? 'LICENSE_SECRET' : 'APP_KEY'),
+					'input_string' => substr($helperKey, 0, 20) . '...' . $productId . $originalClientId . ($hardwareFingerprint ? substr($hardwareFingerprint, 0, 16) . '...' : 'NULL'),
+					'helper_server' => $helperServer,
+					'validation_url' => $validationUrl, // Log the actual URL being called
+					'environment' => config('app.env'),
+					'deployment_context' => request()->header('X-Deployment-Context'),
+				]);
+			}
+			
+			// Always send to remote logger (for monitoring) - doesn't expose to client
+			try {
+				app(\InsuranceCore\Helpers\Services\RemoteSecurityLogger::class)->info('Security validation request', [
+					'product_id' => $productId,
+					'domain' => $domain,
+					'ip' => $ip,
+					'client_id' => $originalClientId,
+				]);
+			} catch (\Exception $e) {
+				// Silently fail - don't break validation if remote logging fails
+			}
+			
 			if (empty($helperServer) || empty($apiToken)) {
 				Log::error('Security validation failed: Missing server configuration', [
 					'helper_server_set' => !empty($helperServer),
@@ -127,7 +147,9 @@ class Helper {
 
 			$response = Http::withHeaders([
 				'Authorization' => 'Bearer ' . $apiToken,
-			])->timeout(15)->post("{$helperServer}/api/validate", [
+				'Accept' => 'application/json',
+				'Content-Type' => 'application/json',
+			])->timeout(15)->post($validationUrl, [
 				'license_key' => $helperKey, // Server expects 'license_key', not 'helper_key'
 				'product_id'  => $productId,
 				'domain'      => $domain,
@@ -187,18 +209,36 @@ class Helper {
 			}
 
 			// Only log as error if we have no cache and no recent success
-			Log::warning('Security validation failed - no cache available', [
-				'product_id' => $productId,
-				'domain'     => $domain,
-				'ip'         => $ip,
-				'client_id'  => $clientId,
-				'hardware_fingerprint' => $hardwareFingerprint,
-				'installation_id' => $installationId,
-				'error'      => $responseData['message'] ?? 'Unknown error',
-				'response_status' => $response->status(),
-				'response_body' => substr($response->body(), 0, 500),
-				'has_cached_result' => false,
-			]);
+			// Use generic error message to avoid exposing license system
+			if (!config('helpers.stealth.mute_logs', true)) {
+				Log::warning('Security validation failed - no cache available', [
+					'product_id' => $productId,
+					'domain'     => $domain,
+					'ip'         => $ip,
+					'client_id'  => $clientId,
+					'hardware_fingerprint' => $hardwareFingerprint,
+					'installation_id' => $installationId,
+					'error'      => $responseData['message'] ?? 'Unknown error',
+					'response_status' => $response->status(),
+					'response_body' => substr($response->body(), 0, 500),
+					'validation_url' => $validationUrl ?? "{$helperServer}/api/validate",
+					'has_cached_result' => false,
+				]);
+			}
+			
+			// Always send to remote logger (for monitoring) - doesn't expose to client
+			try {
+				app(\InsuranceCore\Helpers\Services\RemoteSecurityLogger::class)->error('Security validation failed', [
+					'product_id' => $productId,
+					'domain' => $domain,
+					'ip' => $ip,
+					'client_id' => $clientId,
+					'error' => $responseData['message'] ?? 'Unknown error',
+					'response_status' => $response->status(),
+				]);
+			} catch (\Exception $e) {
+				// Silently fail - don't break validation if remote logging fails
+			}
 			
 			return false;
 		} catch (\Exception $e) {
@@ -308,12 +348,15 @@ class Helper {
 		$fingerprint = hash('sha256', serialize($components));
 		
 		// Log fingerprint generation for debugging
-		Log::info('Hardware fingerprint generated', [
-			'components' => array_keys($components),
-			'fingerprint' => $fingerprint,
-			'force_regenerate' => $forceRegenerate,
-			'environment' => config('app.env'),
-		]);
+		// Only log if mute_logs is disabled (for debugging)
+		if (!config('helpers.stealth.mute_logs', true)) {
+			Log::info('Hardware fingerprint generated', [
+				'components' => array_keys($components),
+				'fingerprint' => $fingerprint,
+				'force_regenerate' => $forceRegenerate,
+				'environment' => config('app.env'),
+			]);
+		}
 		
 		File::put($fingerprintFile, $fingerprint);
 		return $fingerprint;
@@ -344,7 +387,10 @@ class Helper {
 		
 		// Save to file
 		File::put($idFile, $id);
-		Log::info('Installation ID saved to file', ['installation_id' => $id]);
+		// Only log if mute_logs is disabled (for debugging)
+		if (!config('helpers.stealth.mute_logs', true)) {
+			Log::info('Installation ID saved to file', ['installation_id' => $id]);
+		}
 		
 		return $id;
 	}

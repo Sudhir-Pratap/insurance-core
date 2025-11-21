@@ -233,7 +233,7 @@ class VendorProtectionService
                 $violations[] = [
                     'type' => 'file_modified',
                     'file' => $path,
-                    'severity' => isset($baseline['critical_files'][$path]) ? 'critical' : 'high',
+                    'severity' => 'critical', // All file modifications are critical - no tampering allowed
                     'original_hash' => $originalData['hash'],
                     'current_hash' => $currentState['files'][$path]['hash']
                 ];
@@ -255,7 +255,7 @@ class VendorProtectionService
         if ($currentState['structure_hash'] !== $baseline['structure_hash']) {
             $violations[] = [
                 'type' => 'structure_modified',
-                'severity' => 'high',
+                'severity' => 'critical', // Structure modifications are critical - indicates tampering
                 'original_structure' => $baseline['structure_hash'],
                 'current_structure' => $currentState['structure_hash']
             ];
