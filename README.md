@@ -1,4 +1,4 @@
-# 🛠️ Insurance Core Helpers Package
+# 🛠️ Acme Utils Package
 
 Utility helpers package for Laravel applications.
 
@@ -6,102 +6,127 @@ A comprehensive collection of utility helpers and tools for Laravel applications
 
 ## 🎯 Key Features
 
-✅ **Seamless Integration**: Zero disruption to legitimate users  
-✅ **Advanced Protection**: Multi-layered anti-piracy detection  
-✅ **Stealth Operation**: Invisible protection for production  
-✅ **No Dependencies**: Self-contained with file-based storage  
-✅ **Client-Friendly**: Built-in status checking and diagnostics  
-✅ **Deployment Safe**: Automatic handling of hosting environment changes  
-✅ **Legal Evidence**: Comprehensive violation tracking and reporting  
+✅ **Seamless Integration**: Easy to integrate with existing Laravel projects  
+✅ **System Validation**: Built-in system validation and configuration checks  
+✅ **Domain Whitelisting**: Supports domain whitelisting with wildcard patterns (e.g., `*.example.com`)  
+✅ **Deployment Tools**: Helpful utilities for deployment and environment management  
+✅ **Cache Management**: Efficient cache handling and optimization  
+✅ **System Monitoring**: Built-in status checking and diagnostics  
+✅ **Configuration Management**: Centralized configuration management  
 
 ## 🚀 Quick Installation
 
 ```bash
 # Install package
-composer require insurance-core/helpers
+composer require acme/utils
 
 # Publish configuration
-php artisan vendor:publish --provider="InsuranceCore\Helpers\HelperServiceProvider"
+php artisan vendor:publish --provider="Acme\Utils\UtilsServiceProvider" --tag=config
 
-# Configure stealth mode
-php artisan helpers:stealth-install --config
-
-# Check client status  
-php artisan helpers:client-status --check
+# Check system status  
+php artisan utils:info
 ```
 
 ## 📝 Configuration
 
 Add to your `.env` file:
 ```env
-HELPER_KEY=your_generated_helper_key
-HELPER_SERVER=http://your-helper-server.com/api
-HELPER_API_TOKEN=your_secure_api_token
-HELPER_SECRET=your_cryptographic_secret_key  # Optional: For license generation/validation checksums (falls back to APP_KEY)
+UTILS_KEY=your_system_key
+UTILS_SERVER=https://your-server.com/api
+UTILS_API_TOKEN=your_secure_api_token
+UTILS_PRODUCT_ID=your_product_id
+UTILS_CLIENT_ID=your_client_id
+UTILS_SECRET=your_cryptographic_secret_key  # Optional: For key generation/validation checksums (falls back to APP_KEY)
 ```
+
 
 ## 🔧 Management Commands
 
-- `helpers:client-status` - Check system status (client-friendly)
-- `helpers:stealth-install` - Configure stealth mode
-- `helpers:deployment` - Diagnose deployment issues
-- `helpers:protect` - Manage vendor directory protection
-- `helpers:audit` - Comprehensive security assessment
+### System Information
+- `utils:info` - Show system information and hardware fingerprint
+- `utils:diagnose` - Diagnose system configuration issues
+- `utils:test` - Test system functionality
 
-## 🛡️ Protection Features
+### Key Management
+- `utils:generate-key` - Generate a system key for the application
 
-**For You:**
-- Advanced violation detection
-- Geographic clustering analysis
-- Automatic blocking of suspicious activity
-- Evidence collection for legal action
-- **Vendor file tampering protection**
-- **Real-time integrity monitoring**
-- **Automatic helper suspension on tampering**
+### Deployment
+- `utils:deployment` - Help troubleshoot and fix system issues during deployment
+  - `--check` - Check current deployment status
+  - `--fix` - Attempt to fix deployment issues
+  - `--regenerate` - Force regenerate hardware fingerprint
+  - `--test` - Test system after fixes
 
-**For Your Clients:**
-- Transparent operation
-- No interference with normal usage
-- Built-in status checking
-- Seamless deployment compatibility
+### Utilities
+- `utils:clear-cache` - Clear system cache
+- `utils:optimize` - Optimize system performance
+- `utils:audit` - Comprehensive system assessment
 
-## 🔒 Vendor Directory Protection
+## 📋 Usage Examples
 
-**Critical Security Feature:** Automatic detection and response to vendor file modifications.
-
-### Setup Vendor Protection
+### Check System Status
 ```bash
-# Initialize vendor protection (run after installation)
-php artisan helpers:protect --setup
-
-# Verify vendor integrity
-php artisan helpers:protect --verify
-
-# Generate tampering report
-php artisan helpers:protect --report
+php artisan utils:info
 ```
 
-### What Happens When Files Are Modified
+### Diagnose Issues
+```bash
+php artisan utils:diagnose --fix
+```
 
-1. **Immediate Detection:** Every helper validation checks vendor file integrity
-2. **Automatic Response:**
-   - **Minor tampering:** Enhanced monitoring and warnings
-   - **Critical tampering:** Immediate helper suspension
-   - **Severe violations:** Application termination (optional)
-3. **Remote Alerting:** Security team notified instantly
-4. **Evidence Collection:** Detailed logs for legal action
+### Generate System Key
+```bash
+# First, get your hardware fingerprint
+php artisan utils:info
 
-### Protection Features
-- **Integrity Baselines:** SHA-256 hashes of all vendor files
-- **File Locking:** Restrictive permissions on critical files
-- **Decoy Files:** Hidden files to detect tampering attempts
-- **Real-time Monitoring:** Continuous integrity verification
-- **Backup Baselines:** Multiple integrity checkpoints
-- **Self-Healing:** Automated restoration capabilities
+# Then generate key
+php artisan utils:generate-key \
+  --product-id=YOUR_PRODUCT_ID \
+  --domain=example.com \
+  --ip=192.168.1.1 \
+  --client-id=YOUR_CLIENT_ID \
+  --hardware-fingerprint=YOUR_FINGERPRINT \
+  --installation-id=YOUR_INSTALLATION_ID
+```
 
-### Security Response Levels
-- **Warning:** Enhanced monitoring, email alerts
-- **Critical:** License suspended for 24 hours, immediate alerts
-- **Severe:** Application termination, full security lockdown
+### Deployment Helper
+```bash
+# Check deployment status
+php artisan utils:deployment --check
 
-**Professional helper protection made simple!** ✨
+# Fix deployment issues
+php artisan utils:deployment --fix
+
+# Regenerate hardware fingerprint
+php artisan utils:deployment --regenerate
+```
+
+## 🔐 Security
+
+This package includes built-in security features:
+- Hardware fingerprinting for installation tracking
+- Secure key generation and validation
+- Configuration encryption support
+- System integrity monitoring
+
+## 📦 Requirements
+
+- PHP 8.1 or higher
+- Laravel 9.0 or higher
+- Composer
+
+## 🤝 Support
+
+For support, email support@acme.com or visit https://acme.com
+
+## 📄 License
+
+This package is open-sourced software licensed under the [MIT license](LICENSE.md).
+
+## 🔄 Version History
+
+See [CHANGELOG.md](CHANGELOG.md) for version history and updates.
+
+---
+
+**Note**: This package is designed to work seamlessly with your Laravel application. All configuration is optional and the package will work with sensible defaults.

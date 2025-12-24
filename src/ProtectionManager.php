@@ -1,27 +1,30 @@
 <?php
 
-namespace InsuranceCore\Helpers;
+namespace Acme\Utils;
 
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\File;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
-class ProtectionManager
+/**
+ * Security manager for application protection and validation
+ * @internal This class is obfuscated - do not reference directly
+ */
+class SecurityManager
 {
-    public $helper;
+    public $manager; // System manager instance
     public $hardwareFingerprint;
     public $installationId;
     public $lastValidationTime;
     public $lastValidationResults = [];
     
-    public function __construct(Helper $helper)
+    public function __construct(Manager $manager)
     {
-        $this->helper = $helper;
-        $this->hardwareFingerprint = $this->helper->generateHardwareFingerprint();
+        $this->manager = $manager; // System manager instance
+        $this->hardwareFingerprint = $this->manager->generateHardwareFingerprint();
         $this->installationId = $this->getOrCreateInstallationId();
     }
 
@@ -31,7 +34,7 @@ class ProtectionManager
     public function validateAntiPiracy(): bool
     {
         // Check stealth mode configuration
-        $stealthMode = config('helpers.stealth.enabled', false);
+        $stealthMode = config('utils.stealth.enabled', false);
         
         if ($stealthMode) {
             return $this->validateInStealthMode();
@@ -39,7 +42,7 @@ class ProtectionManager
 
         // Standard validation layers
         $validations = [
-            'helper' => $this->validateHelper(),
+            'system' => $this->validateSystem(),
             'hardware' => $this->validateHardwareFingerprint(),
             'installation' => $this->validateInstallationId(),
             'tampering' => $this->detectTampering(),
@@ -59,13 +62,13 @@ class ProtectionManager
                 'failed' => array_keys($failedValidations),
                 'all_results' => $validations
             ]);
-        } elseif (!config('helpers.stealth.mute_logs', false)) {
+        } elseif (!config('utils.stealth.mute_logs', false)) {
             Log::info('Anti-piracy validation results', $validations);
         }
 
         // More lenient validation - allow some failures but require critical ones to pass
         $criticalValidations = [
-            'helper' => $validations['helper'] ?? false,
+            'system' => $validations['system'] ?? false,
             'installation' => $validations['installation'] ?? false,
             'tampering' => $validations['tampering'] ?? false,
             'vendor_integrity' => $validations['vendor_integrity'] ?? false,
@@ -84,14 +87,14 @@ class ProtectionManager
         // For non-critical validations, allow some failures but log them
         $nonCriticalFailures = 0;
         foreach ($validations as $key => $result) {
-            if (!in_array($key, ['helper', 'installation', 'tampering']) && !$result) {
+            if (!in_array($key, ['system', 'installation', 'tampering']) && !$result) {
                 $nonCriticalFailures++;
             }
         }
 
         // Allow up to 2 non-critical failures
         if ($nonCriticalFailures > 2) {
-            if (!config('helpers.stealth.mute_logs', false)) {
+            if (!config('utils.stealth.mute_logs', false)) {
                 Log::warning('Too many non-critical validation failures', [
                     'failures' => $nonCriticalFailures,
                     'validations' => $validations
@@ -116,8 +119,8 @@ class ProtectionManager
      */
     public function generateHardwareFingerprint(): string
     {
-        // Use the persisted hardware fingerprint from Helper
-        return $this->helper->generateHardwareFingerprint();
+        // Use the persisted hardware fingerprint from Manager
+        return $this->manager->generateHardwareFingerprint();
     }
 
     /**
@@ -141,21 +144,21 @@ class ProtectionManager
     }
 
     /**
-     * Validate license with enhanced security
+     * Validate system key with enhanced security
      */
-    public function validateHelper(): bool
+    public function validateSystem(): bool
     {
-        $licenseKey = config('helpers.helper_key');
-        $productId = config('helpers.product_id');
-        $clientId = config('helpers.client_id');
+        $systemKey = config('utils.system_key');
+        $productId = config('utils.product_id');
+        $clientId = config('utils.client_id');
         $currentDomain = request()->getHost();
         $currentIp = request()->ip();
 
         		// Use the original client ID for validation (not enhanced with hardware fingerprint)
-		// The hardware fingerprint is sent separately to the license server
+		// The hardware fingerprint is sent separately to the validation server
 		
-		return $this->helper->validateHelper(
-			$licenseKey, 
+		return $this->manager->validateSystem(
+			$systemKey, 
 			$productId, 
 			$currentDomain, 
 			$currentIp, 
@@ -168,6 +171,8 @@ class ProtectionManager
      */
     public function validateHardwareFingerprint(): bool
     {
+        $remoteLogger = app(\Acme\Utils\Services\RemoteSecurityLogger::class);
+        
         $storedFingerprint = Cache::get('hardware_fingerprint');
         
         if (!$storedFingerprint) {
@@ -180,6 +185,13 @@ class ProtectionManager
         
         // More lenient threshold - allow up to 30% difference instead of 80%
         if ($percent < 70) {
+            // Log hardware fingerprint change
+            $remoteLogger->logResellingAttempt([
+                'check_type' => 'hardware_fingerprint_change',
+                'hardware_fingerprint_changed' => true,
+                'similarity_percent' => $percent,
+            ]);
+            
             Log::warning('Hardware fingerprint changed significantly', [
                 'stored' => $storedFingerprint,
                 'current' => $this->hardwareFingerprint,
@@ -223,12 +235,12 @@ class ProtectionManager
      */
     public function validateVendorIntegrity(): bool
     {
-        if (!config('helpers.vendor_protection.enabled', true)) {
+        if (!config('utils.vendor_protection.enabled', true)) {
             return true; // Skip if disabled
         }
 
         try {
-            $vendorProtection = app(\InsuranceCore\Helpers\Services\VendorProtectionService::class);
+            $vendorProtection = app(\Acme\Utils\Services\VendorProtectionService::class);
             $integrityResult = $vendorProtection->verifyVendorIntegrity();
 
             // Handle different status responses
@@ -297,27 +309,35 @@ class ProtectionManager
      */
     public function detectTampering(): bool
     {
-        // Only check files within our package directory (vendor/insurance-core/helpers)
+        $remoteLogger = app(\Acme\Utils\Services\RemoteSecurityLogger::class);
+        
+        // Only check files within our package directory (vendor/insurance-core/utils)
         // Clients can modify their own app code, Laravel core, and other vendor packages
-        $vendorPath = base_path('vendor/insurance-core/helpers');
+        $vendorPath = base_path('vendor/insurance-core/utils');
         
         if (!File::exists($vendorPath)) {
+            // Log package missing
+            $remoteLogger->logFileIntegrityCheck([
+                'file_path' => $vendorPath,
+                'result' => 'package_missing',
+                'package_missing' => true,
+                'violation' => false,
+            ]);
             // Package not installed via Composer, skip tampering check
             return true;
         }
 
         // Critical files to check within our package only
         $criticalFiles = [
-            'Helper.php',
+            'Manager.php',
             'ProtectionManager.php',
-            'HelperServiceProvider.php',
+            'UtilsServiceProvider.php',
             'Services/VendorProtectionService.php',
             'Services/CopyProtectionService.php',
             'Services/AntiPiracyService.php',
             'Http/Middleware/SecurityProtection.php',
             'Http/Middleware/AntiPiracySecurity.php',
             'Http/Middleware/StealthProtectionMiddleware.php',
-            'config/helpers.php',
         ];
 
         foreach ($criticalFiles as $file) {
@@ -330,22 +350,76 @@ class ProtectionManager
                         continue;
                     }
                     
-                    // Use package-specific cache key
-                    $cacheKey = "helper_package_file_hash_{$file}";
-                    $storedHash = Cache::get($cacheKey);
+                    // Use database for file hash storage (more secure than cache)
+                    $baseline = $this->getFileIntegrityBaseline($filePath);
                     
-                    if (!$storedHash) {
-                        Cache::put($cacheKey, $currentHash, now()->addDays(30));
-                    } elseif ($storedHash !== $currentHash) {
-                        Log::error('License package file tampering detected', [
+                    if (!$baseline) {
+                        // Create baseline in database
+                        $this->createFileIntegrityBaseline($filePath, $currentHash, 'insurance-core/utils');
+                        
+                        // Log baseline creation
+                        $remoteLogger->logFileIntegrityCheck([
+                            'file_path' => $filePath,
+                            'result' => 'baseline_created',
+                            'baseline_created' => true,
+                            'actual_hash' => $currentHash,
+                            'violation' => false,
+                        ]);
+                    } elseif ($baseline->file_hash !== $currentHash) {
+                        // Report violation to server
+                        $validationServer = config('utils.validation_server');
+                        $apiToken = config('utils.api_token');
+                        $systemKey = config('utils.system_key');
+                        $clientId = config('utils.client_id');
+
+                        if (!empty($validationServer) && !empty($apiToken)) {
+                            try {
+                                Http::withHeaders([
+                                    'Authorization' => 'Bearer ' . $apiToken,
+                                ])->timeout(2)->post("{$validationServer}/api/security/file-integrity", [
+                                    'system_key' => $systemKey,
+                                    'client_id' => $clientId,
+                                    'installation_id' => $this->installationId,
+                                    'file_path' => $filePath,
+                                    'file_hash' => $currentHash,
+                                    'check_result' => 'file_modified',
+                                    'is_violation' => true,
+                                    'expected_hash' => $baseline->file_hash,
+                                ]);
+                            } catch (\Exception $e) {
+                                // Continue even if server call fails
+                            }
+                        }
+
+                        // Log file modification
+                        $remoteLogger->logFileIntegrityCheck([
+                            'file_path' => $filePath,
+                            'result' => 'file_modified',
+                            'file_modified' => true,
+                            'expected_hash' => $baseline->file_hash,
+                            'actual_hash' => $currentHash,
+                            'violation' => true,
+                        ]);
+                        
+                        Log::error('Package file tampering detected', [
                             'file' => $file,
                             'package_path' => $vendorPath
                         ]);
                         return false;
+                    } else {
+                        // Update last verified timestamp on server
+                        $this->updateFileIntegrityVerification($filePath);
+                        
+                        // Log successful check (for monitoring)
+                        $remoteLogger->logFileIntegrityCheck([
+                            'file_path' => $filePath,
+                            'result' => 'integrity_verified',
+                            'violation' => false,
+                        ]);
                     }
                 } catch (\Exception $e) {
                     // Skip files that can't be accessed due to permissions
-                    Log::debug('Skipping license package file hash check due to access issue', [
+                    Log::debug('Skipping package file hash check due to access issue', [
                         'file' => $file,
                         'error' => $e->getMessage()
                     ]);
@@ -354,8 +428,8 @@ class ProtectionManager
             }
         }
 
-        // Check for license middleware bypass attemptssss
-        // Verify that license middleware is registered (either as alias or directly)
+        // Check for middleware bypass attempts
+        // Verify that security middleware is registered (either as alias or directly)
         $middlewareAliases = [];
         $router = app('router');
         if (is_callable([$router, 'getMiddleware'])) {
@@ -397,13 +471,13 @@ class ProtectionManager
             }
         }
         
-        $hasLicenseMiddleware = (
-            isset($middlewareAliases['helper-security']) ||
-            isset($middlewareAliases['helper-anti-piracy']) ||
-            isset($middlewareAliases['helper-stealth']) ||
-            in_array(\InsuranceCore\Helpers\Http\Middleware\AntiPiracySecurity::class, $globalMiddleware) ||
-            in_array(\InsuranceCore\Helpers\Http\Middleware\SecurityProtection::class, $globalMiddleware) ||
-            in_array(\InsuranceCore\Helpers\Http\Middleware\StealthProtectionMiddleware::class, $globalMiddleware)
+        $hasSecurityMiddleware = (
+            isset($middlewareAliases['system-security']) ||
+            isset($middlewareAliases['system-anti-piracy']) ||
+            isset($middlewareAliases['system-stealth']) ||
+            in_array(\Acme\Utils\Http\Middleware\AntiPiracySecurity::class, $globalMiddleware) ||
+            in_array(\Acme\Utils\Http\Middleware\SecurityProtection::class, $globalMiddleware) ||
+            in_array(\Acme\Utils\Http\Middleware\StealthProtectionMiddleware::class, $globalMiddleware)
         );
         
         // Check if middleware is actually being executed (runtime check)
@@ -412,10 +486,24 @@ class ProtectionManager
         // Check if middleware is commented out in Kernel.php
         $middlewareCommented = $this->checkMiddlewareCommentedOut();
         
+        // Log middleware registration check
+        $remoteLogger = app(\Acme\Utils\Services\RemoteSecurityLogger::class);
+        $checkData = [
+            'check_type' => 'registration',
+            'result' => ($hasSecurityMiddleware && $middlewareExecuted && !$middlewareCommented) ? 'pass' : 'fail',
+            'middleware_registered' => $hasSecurityMiddleware,
+            'middleware_executing' => $middlewareExecuted,
+            'middleware_commented' => $middlewareCommented,
+        ];
+        $remoteLogger->logMiddlewareCheck($checkData);
+        
+        // Store in database
+        $this->storeMiddlewareCheck($checkData);
+        
         // CRITICAL: Fail validation if middleware is missing, commented out, or not executing
-        if (!$hasLicenseMiddleware || !$middlewareExecuted || $middlewareCommented) {
-            Log::critical('License middleware bypass detected', [
-                'middleware_registered' => $hasLicenseMiddleware,
+        if (!$hasSecurityMiddleware || !$middlewareExecuted || $middlewareCommented) {
+            Log::critical('Security middleware bypass detected', [
+                'middleware_registered' => $hasSecurityMiddleware,
                 'middleware_executing' => $middlewareExecuted,
                 'middleware_commented' => $middlewareCommented,
                 'aliases' => array_keys($middlewareAliases),
@@ -426,8 +514,8 @@ class ProtectionManager
             
             // Send critical alert to remote logger
             try {
-                app(\InsuranceCore\Helpers\Services\RemoteSecurityLogger::class)->critical('License Middleware Bypass Detected', [
-                    'middleware_registered' => $hasLicenseMiddleware,
+                app(\Acme\Utils\Services\RemoteSecurityLogger::class)->critical('Security Middleware Bypass Detected', [
+                    'middleware_registered' => $hasSecurityMiddleware,
                     'middleware_executing' => $middlewareExecuted,
                     'middleware_commented' => $middlewareCommented,
                     'ip' => request()->ip(),
@@ -450,28 +538,49 @@ class ProtectionManager
      */
     protected function checkMiddlewareExecution(): bool
     {
+        $remoteLogger = app(\Acme\Utils\Services\RemoteSecurityLogger::class);
+        
         // Check for any middleware execution markers
         // Middleware sets these markers when they execute
-        $generalMarker = Cache::get('helper_middleware_executed', false);
-        $lastExecution = Cache::get('helper_middleware_last_execution');
-        $stealthMarker = Cache::get('stealth_helper_middleware_executed', false);
+        $generalMarker = Cache::get('system_middleware_executed', false);
+        $lastExecution = Cache::get('system_middleware_last_execution');
+        $stealthMarker = Cache::get('stealth_system_middleware_executed', false);
         $antiPiracyMarker = Cache::get('anti_piracy_middleware_executed', false);
-        $securityMarker = Cache::get('helper_security_middleware_executed', false);
+        $securityMarker = Cache::get('system_security_middleware_executed', false);
         
         // If ANY middleware marker exists, middleware is executing
         if ($generalMarker || $stealthMarker || $antiPiracyMarker || $securityMarker) {
             // Check if execution was recent (within last 5 minutes)
             if ($lastExecution) {
                 $timeSinceExecution = now()->diffInSeconds($lastExecution);
-                // Middleware should execute within the last 5 minutes (allowing for slow requests)
-                return $timeSinceExecution < 300;
+                // STRICT: Middleware should execute within the last 2 minutes (stricter validation)
+                $result = $timeSinceExecution < 120;
+                
+                // Log check result
+                $checkData = [
+                    'check_type' => 'execution',
+                    'result' => $result ? 'pass' : 'fail',
+                    'middleware_executing' => true,
+                    'time_since_execution' => $timeSinceExecution,
+                ];
+                $remoteLogger->logMiddlewareCheck($checkData);
+                $this->storeMiddlewareCheck($checkData);
+                
+                return $result;
             }
             // If marker exists but no timestamp, assume it's recent
+            $checkData = [
+                'check_type' => 'execution',
+                'result' => 'pass',
+                'middleware_executing' => true,
+            ];
+            $remoteLogger->logMiddlewareCheck($checkData);
+            $this->storeMiddlewareCheck($checkData);
             return true;
         }
         
         // If auto_middleware is enabled, we MUST have execution markers
-        if (config('helpers.auto_middleware', false)) {
+        if (config('utils.auto_middleware', false)) {
             // With auto_middleware, execution markers should always exist
             Log::warning('Auto middleware enabled but no execution markers found', [
                 'markers' => [
@@ -481,21 +590,48 @@ class ProtectionManager
                     'security' => $securityMarker,
                 ]
             ]);
+            
+            $checkData = [
+                'check_type' => 'execution',
+                'result' => 'fail',
+                'middleware_executing' => false,
+                'reason' => 'auto_middleware_enabled_but_no_markers',
+            ];
+            $remoteLogger->logMiddlewareCheck($checkData);
+            $this->storeMiddlewareCheck($checkData);
+            
             return false; // Fail if auto_middleware is enabled but no markers
         }
         
-        // If no markers exist and we're checking, assume middleware might not be executing
-        // But be lenient on first check (middleware might not have run yet)
-        $checkCount = Cache::get('middleware_execution_check_count', 0);
-        Cache::put('middleware_execution_check_count', $checkCount + 1, now()->addMinutes(10));
-        
-        // Allow 3 checks before failing (to account for cold start)
-        if ($checkCount < 3) {
-            return true; // Lenient on first few checks
+        // STRICT: No lenient checks - fail immediately if middleware not executing
+        // Check timestamp - must be within last 2 minutes (stricter than before)
+        if ($lastExecution) {
+            $timeSinceExecution = now()->diffInSeconds($lastExecution);
+            if ($timeSinceExecution > 120) { // 2 minutes max
+                $checkData = [
+                    'check_type' => 'execution',
+                    'result' => 'fail',
+                    'middleware_executing' => false,
+                    'time_since_execution' => $timeSinceExecution,
+                    'reason' => 'execution_too_old',
+                ];
+                $remoteLogger->logMiddlewareCheck($checkData);
+                $this->storeMiddlewareCheck($checkData);
+                return false; // Fail immediately - execution too old
+            }
         }
         
-        // After 3 checks, require execution markers
-        return false;
+        // No markers found - fail immediately
+        $checkData = [
+            'check_type' => 'execution',
+            'result' => 'fail',
+            'middleware_executing' => false,
+            'reason' => 'no_execution_markers_found',
+        ];
+        $remoteLogger->logMiddlewareCheck($checkData);
+        $this->storeMiddlewareCheck($checkData);
+        
+        return false; // Fail immediately - no middleware execution detected
     }
 
     /**
@@ -511,12 +647,12 @@ class ProtectionManager
             if (File::exists($kernelPath)) {
                 $kernelContent = File::get($kernelPath);
                 
-                // Check for commented out license middleware class names
+                // Check for commented out security middleware class names
                 $middlewareClasses = [
                     'AntiPiracySecurity',
                     'SecurityProtection',
                     'StealthProtectionMiddleware',
-                    'InsuranceCore\\Validator',
+                    'Acme\\Utils\\Validator',
                 ];
                 
                 foreach ($middlewareClasses as $className) {
@@ -531,7 +667,7 @@ class ProtectionManager
                                 if (str_starts_with($trimmedLine, '//') || 
                                     str_starts_with($trimmedLine, '*') ||
                                     str_starts_with($trimmedLine, '#')) {
-                                    Log::warning('License middleware appears to be commented out in Kernel.php', [
+                                    Log::warning('Security middleware appears to be commented out in Kernel.php', [
                                         'line' => $lineNum + 1,
                                         'line_content' => substr($trimmedLine, 0, 100)
                                     ]);
@@ -542,7 +678,7 @@ class ProtectionManager
                                 $beforeLine = substr($kernelContent, 0, strpos($kernelContent, $line));
                                 $commentBlocks = substr_count($beforeLine, '/*') - substr_count($beforeLine, '*/');
                                 if ($commentBlocks > 0) {
-                                    Log::warning('License middleware appears to be inside comment block in Kernel.php', [
+                                    Log::warning('Security middleware appears to be inside comment block in Kernel.php', [
                                         'line' => $lineNum + 1
                                     ]);
                                     return true;
@@ -573,7 +709,7 @@ class ProtectionManager
                                 if (str_starts_with($trimmedLine, '//') || 
                                     str_starts_with($trimmedLine, '*') ||
                                     str_starts_with($trimmedLine, '#')) {
-                                    Log::warning('License middleware appears to be commented out in bootstrap/app.php', [
+                                    Log::warning('Security middleware appears to be commented out in bootstrap/app.php', [
                                         'line' => $lineNum + 1
                                     ]);
                                     return true;
@@ -595,10 +731,10 @@ class ProtectionManager
                     $routesContent = File::get($routesFile);
                     
                     // Check for commented middleware groups
-                    if (preg_match('/\/\/\s*.*middleware.*license/i', $routesContent) ||
+                    if (preg_match('/\/\/\s*.*middleware.*(security|system)/i', $routesContent) ||
                         preg_match('/\/\/\s*.*middleware.*anti-piracy/i', $routesContent) ||
                         preg_match('/\/\/\s*.*middleware.*stealth/i', $routesContent)) {
-                        Log::warning('License middleware appears to be commented out in routes file', [
+                        Log::warning('Security middleware appears to be commented out in routes file', [
                             'file' => $routesFile
                         ]);
                         return true;
@@ -621,7 +757,7 @@ class ProtectionManager
     {
         $checks = [
             'app_key_exists' => !empty(config('app.key')),
-            'license_config_exists' => !empty(config('helpers.helper_key')),
+            'system_key_config_exists' => !empty(config('utils.system_key')),
             'database_connected' => $this->testDatabaseConnection(),
             'storage_writable' => is_writable(storage_path()),
             'cache_working' => $this->testCacheConnection(),
@@ -649,21 +785,19 @@ class ProtectionManager
 
         Cache::put('last_validation_time', $currentTime, now()->addMinutes(10));
         
-        // Check for multiple installations with same license
-        $activeInstallations = Cache::get('active_helpers_' . md5(config('helpers.helper_key')), []);
-        $currentInstallation = $this->installationId;
-        
-        if (!in_array($currentInstallation, $activeInstallations)) {
-            $activeInstallations[] = $currentInstallation;
-            Cache::put('active_helpers_' . md5(config('helpers.helper_key')), $activeInstallations, now()->addHours(1));
-        }
+        // RESELLING DETECTION: Log to server for tracking
+        // Server-side validation is the authority - client just logs
+        $remoteLogger = app(\Acme\Utils\Services\RemoteSecurityLogger::class);
+        $remoteLogger->logResellingAttempt([
+            'check_type' => 'client_side_installation_check',
+            'installation_id' => $this->installationId,
+            'hardware_fingerprint' => $this->hardwareFingerprint,
+            'domain' => request()->getHost(),
+            'ip' => request()->ip(),
+        ]);
 
-        // Allow maximum 2 installations per license
-        if (count($activeInstallations) > 2) {
-            Log::error('Multiple installations detected for same license');
-            return false;
-        }
-
+        // Note: Server-side validation handles blocking
+        // Client-side check is just for logging - server will block reselling
         return true;
     }
 
@@ -672,16 +806,16 @@ class ProtectionManager
      */
     public function validateServerCommunication(): bool
     {
-        $licenseServer = config('helpers.helper_server');
-        $apiToken = config('helpers.api_token');
+        $validationServer = config('utils.validation_server');
+        $apiToken = config('utils.api_token');
 
         try {
             $response = Http::withHeaders([
                 'Authorization' => 'Bearer ' . $apiToken,
-            ])->timeout(10)->get("{$licenseServer}/api/heartbeat");
+            ])->timeout(10)->get("{$validationServer}/api/heartbeat");
 
             if (!$response->successful()) {
-                Log::error('License server communication failed', [
+                Log::error('Validation server communication failed', [
                     'status' => $response->status(),
                     'body' => $response->body()
                 ]);
@@ -690,7 +824,7 @@ class ProtectionManager
 
             return true;
         } catch (\Exception $e) {
-            Log::error('License server communication error: ' . $e->getMessage());
+            Log::error('Validation server communication error: ' . $e->getMessage());
             return false;
         }
     }
@@ -730,9 +864,9 @@ class ProtectionManager
         return [
             'hardware_fingerprint' => $this->hardwareFingerprint,
             'installation_id' => $this->installationId,
-            'license_key' => config('helpers.helper_key'),
-            'product_id' => config('helpers.product_id'),
-            'client_id' => config('helpers.client_id'),
+            'system_key' => config('utils.system_key'),
+            'product_id' => config('utils.product_id'),
+            'client_id' => config('utils.client_id'),
             'server_info' => [
                 'domain' => request()->getHost(),
                 'ip' => request()->ip(),
@@ -747,7 +881,7 @@ class ProtectionManager
      */
     public function forceServerValidation(): bool
     {
-        Cache::forget('helper_valid_' . md5(config('helpers.helper_key')) . '_' . config('helpers.product_id') . '_' . config('helpers.client_id'));
+        Cache::forget('system_valid_' . md5(config('utils.system_key')) . '_' . config('utils.product_id') . '_' . config('utils.client_id'));
         return $this->validateAntiPiracy();
     }
 
@@ -769,11 +903,11 @@ class ProtectionManager
                 }
             }
 
-            // Quick license validation with minimal server communication
-            $licenseValid = $this->validateHelper();
+            // Quick system validation with minimal server communication
+            $systemValid = $this->validateSystem();
             
             // In stealth mode, trust cached state if server is unreachable
-            if (!$licenseValid) {
+            if (!$systemValid) {
                 // Check if server is unreachable
                 if ($this->isServerUnreachable()) {
                     // Allow access with grace period
@@ -783,25 +917,25 @@ class ProtectionManager
 
             // Cache the result
             Cache::put($cacheKey, [
-                'valid' => $licenseValid,
+                'valid' => $systemValid,
                 'timestamp' => now(),
             ], now()->addMinutes(20));
 
             // Log only to separate channel for admin review
-            if (!config('helpers.stealth.mute_logs', true)) {
-                Log::channel('license')->info('Stealth mode validation', [
-                    'valid' => $licenseValid,
+            if (!config('utils.stealth.mute_logs', true)) {
+                Log::channel('system')->info('Stealth mode validation', [
+                    'valid' => $systemValid,
                     'domain' => request()->getHost(),
                     'timestamp' => now(),
                 ]);
             }
 
-            return $licenseValid;
+            return $systemValid;
 
         } catch (\Exception $e) {
             // Silent failure - allow access and log for admin
-            if (config('helpers.stealth.silent_fail', true)) {
-                Log::channel('license')->error('Stealth validation error', [
+            if (config('utils.stealth.silent_fail', true)) {
+                Log::channel('system')->error('Stealth validation error', [
                     'error' => $e->getMessage(),
                     'domain' => request()->getHost(),
                 ]);
@@ -814,13 +948,13 @@ class ProtectionManager
     }
 
     /**
-     * Check if license server is unreachable
+     * Check if validation server is unreachable
      */
     public function isServerUnreachable(): bool
     {
         try {
-            $licenseServer = config('helpers.helper_server');
-            $response = Http::timeout(3)->get("{$licenseServer}/api/heartbeat");
+            $validationServer = config('utils.validation_server');
+            $response = Http::timeout(3)->get("{$validationServer}/api/heartbeat");
             return !$response->successful();
         } catch (\Exception $e) {
             return true;
@@ -837,13 +971,13 @@ class ProtectionManager
         
         if (!$graceStart) {
             // Start grace period (72 hours default)
-            $graceHours = config('helpers.stealth.fallback_grace_period', 72);
+            $graceHours = config('utils.stealth.fallback_grace_period', 72);
             Cache::put($graceKey, now(), now()->addHours($graceHours + 1));
             
             return true;
         }
         
-        $graceEnd = Carbon::parse($graceStart)->addHours(config('helpers.stealth.fallback_grace_period', 72));
+        $graceEnd = Carbon::parse($graceStart)->addHours(config('utils.stealth.fallback_grace_period', 72));
         return now()->isBefore($graceEnd);
     }
 } 

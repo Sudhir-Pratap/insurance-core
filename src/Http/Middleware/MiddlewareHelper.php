@@ -1,17 +1,17 @@
 <?php
 
-namespace InsuranceCore\Helpers\Http\Middleware;
+namespace Acme\Utils\Http\Middleware;
 
 use Illuminate\Http\Request;
 
 class MiddlewareHelper
 {
     /**
-     * Check if request should skip license validation
+     * Check if request should skip system validation
      */
     public static function shouldSkipValidation(Request $request): bool
     {
-        $skipRoutes = config('helpers.skip_routes', []);
+        $skipRoutes = config('utils.skip_routes', []);
         $path = $request->path();
 
         // Skip specific routes
@@ -39,13 +39,13 @@ class MiddlewareHelper
     public static function hasBypass(Request $request): bool
     {
         // Allow bypass in local environment (unless explicitly disabled for testing)
-        if (app()->environment('local') && !config('helpers.disable_local_bypass', false)) {
+        if (app()->environment('local') && !config('utils.disable_local_bypass', false)) {
             return true;
         }
 
         // Check for bypass token
-        $bypassToken = config('helpers.bypass_token');
-        if ($bypassToken && $request->header('X-License-Bypass') === $bypassToken) {
+        $bypassToken = config('utils.bypass_token');
+        if ($bypassToken && $request->header('X-System-Bypass') === $bypassToken) {
             return true;
         }
 
@@ -55,22 +55,22 @@ class MiddlewareHelper
     /**
      * Get appropriate error response based on request type
      */
-    public static function getFailureResponse(Request $request, string $message = 'License validation failed'): \Illuminate\Http\Response|\Illuminate\Http\JsonResponse
+    public static function getFailureResponse(Request $request, string $message = 'System validation failed'): \Illuminate\Http\Response|\Illuminate\Http\JsonResponse
     {
         // Check if it's an API request
         if ($request->expectsJson() || $request->is('api/*')) {
             return response()->json([
-                'error' => 'License validation failed',
+                'error' => 'System validation failed',
                 'message' => $message,
-                'code' => 'LICENSE_INVALID'
+                'code' => 'SYSTEM_INVALID'
             ], 403);
         }
 
         // For web requests, return a proper error page
-        return response()->view('errors.license', [
-            'title' => 'License Error',
+        return response()->view('errors.system', [
+            'title' => 'System Error',
             'message' => $message,
-            'support_email' => config('helpers.support_email', 'support@example.com'),
+            'support_email' => config('utils.support_email', 'support@example.com'),
         ], 403);
     }
 }

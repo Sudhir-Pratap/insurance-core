@@ -1,9 +1,9 @@
 <?php
 
-namespace InsuranceCore\Helpers\Commands;
+namespace Acme\Utils\Commands;
 
-use InsuranceCore\Helpers\Services\CodeProtectionService;
-use InsuranceCore\Helpers\Services\VendorProtectionService;
+use Acme\Utils\Services\CodeProtectionService;
+use Acme\Utils\Services\VendorProtectionService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Cache;
@@ -13,7 +13,7 @@ class OptimizeCommand extends Command
     /**
      * The name and signature of the console command.
      */
-    protected $signature = 'helpers:optimize
+    protected $signature = 'utils:optimize
                           {--vendor-path= : Path to vendor directory}
                           {--backup : Create backup before optimization}
                           {--verify : Verify optimization was applied}';
@@ -21,22 +21,22 @@ class OptimizeCommand extends Command
     /**
      * The console command description.
      */
-    protected $description = 'Optimize helper code in vendor directory for production';
+    protected $description = 'Optimize system code in vendor directory for production';
 
     /**
      * Execute the console command.
      */
     public function handle()
     {
-        if (!config('helpers.code_protection.obfuscation_enabled', true)) {
+        if (!config('utils.code_protection.obfuscation_enabled', true)) {
             $this->warn('Code obfuscation is disabled in config.');
-            $this->info('Set HELPER_OBFUSCATE=true in your .env file to enable.');
+            $this->info('Set UTILS_OBFUSCATE=true in your .env file to enable.');
             return 1;
         }
 
         $this->info('🔒 Starting code obfuscation process...');
         
-        $vendorPath = $this->option('vendor-path') ?? base_path('vendor/insurance-core/helpers');
+        $vendorPath = $this->option('vendor-path') ?? base_path('vendor/acme/utils');
         
         if (!File::exists($vendorPath)) {
             $this->error("❌ Vendor path not found: {$vendorPath}");
@@ -91,7 +91,7 @@ class OptimizeCommand extends Command
      */
     private function createBackup(string $vendorPath): void
     {
-        $backupPath = storage_path('app/helpers-backup-' . date('Y-m-d-His'));
+        $backupPath = storage_path('app/utils-backup-' . date('Y-m-d-His'));
         
         $this->info("💾 Creating backup to: {$backupPath}");
         
@@ -108,8 +108,8 @@ class OptimizeCommand extends Command
         $this->info('🔍 Verifying obfuscation...');
         
         $criticalFiles = [
-            'src/Helper.php',
-            'src/ProtectionManager.php',
+            'src/Manager.php',
+            'src/SecurityManager.php',
         ];
 
         $verified = 0;
@@ -122,7 +122,7 @@ class OptimizeCommand extends Command
             $content = File::get($filePath);
             
             // Check if original function names still exist (shouldn't)
-            $originalNames = ['validateHelper', 'generateHardwareFingerprint', 'validateProtection'];
+            $originalNames = ['validateSystem', 'generateHardwareFingerprint', 'validateAntiPiracy'];
             $hasOriginal = false;
             
             foreach ($originalNames as $name) {
@@ -159,15 +159,15 @@ class OptimizeCommand extends Command
             $vendorProtection->createVendorIntegrityBaseline();
             
             // Mark obfuscation state so integrity checks know files are obfuscated
-            Cache::put('helper_files_optimized', true, now()->addYears(1));
-            Cache::put('helper_optimization_timestamp', now()->toISOString(), now()->addYears(1));
+            Cache::put('utils_files_optimized', true, now()->addYears(1));
+            Cache::put('utils_optimization_timestamp', now()->toISOString(), now()->addYears(1));
             
             $this->info('✅ Vendor integrity baseline regenerated with obfuscated files');
             $this->info('✅ Tampering detection will now expect obfuscated file hashes');
             
         } catch (\Exception $e) {
             $this->warn('⚠️  Failed to regenerate integrity baseline: ' . $e->getMessage());
-            $this->warn('⚠️  You may see false tampering alerts. Run: php artisan helpers:protect --setup');
+            $this->warn('⚠️  You may see false tampering alerts. Run: php artisan utils:protect --setup');
         }
     }
 }

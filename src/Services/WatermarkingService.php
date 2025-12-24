@@ -1,6 +1,6 @@
 <?php
 
-namespace InsuranceCore\Helpers\Services;
+namespace Acme\Utils\Services;
 
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
@@ -13,7 +13,7 @@ class WatermarkingService
      */
     public function generateClientWatermark(string $clientId, string $pageContent = ''): string
     {
-        if (!config('helpers.code_protection.watermarking', true)) {
+        if (!config('utils.code_protection.watermarking', true)) {
             return $pageContent;
         }
 
@@ -31,7 +31,7 @@ class WatermarkingService
      */
     public function createWatermark(string $clientId): string
     {
-        $seed = hash('sha256', $clientId . config('helpers.helper_key') . date('Y-m-d'));
+        $seed = hash('sha256', $clientId . config('utils.system_key') . date('Y-m-d'));
         
         // Create invisible watermark using Unicode zero-width characters
         $watermarkChars = [
@@ -172,7 +172,7 @@ class WatermarkingService
      */
     public function addRuntimeChecks(string &$content): void
     {
-        if (!config('helpers.code_protection.runtime_checks', true)) {
+        if (!config('utils.code_protection.runtime_checks', true)) {
             return;
         }
 
@@ -189,8 +189,8 @@ class WatermarkingService
      */
     public function generateIntegrityCheckScript(): string
     {
-        $clientId = config('helpers.client_id');
-        $licenseKey = substr(config('helpers.helper_key'), 0, 8);
+        $clientId = config('utils.client_id');
+        $systemKey = substr(config('utils.system_key'), 0, 8);
         
         return "
 (function() {
@@ -199,7 +199,7 @@ class WatermarkingService
     // Generate dynamic key for integrity checks
     var dk = function() {
         var a=" . json_encode(str_split($clientId)) . ";
-        var b=" . json_encode(str_split($licenseKey)) . ";
+        var b=" . json_encode(str_split($systemKey)) . ";
         var r=[];
         for(var i=0;i<a.length;i++) { r.push(a[i].charCodeAt(0) ^ b[i % b.length].charCodeAt(0)); }
         return btoa(String.fromCharCode.apply(null, r));
@@ -235,10 +235,10 @@ class WatermarkingService
     // Execute checks periodically
     setInterval(function() {
         if (!checkIntegrity()) {
-            // Silent reporting to license server
+            // Silent reporting to validation server
             try {
                 var img = new Image();
-                img.src = '" . config('helpers.helper_server') . "/api/rt-check?err=' + encodeURIComponent('integrity');
+                img.src = '" . config('utils.validation_server') . "/api/rt-check?err=' + encodeURIComponent('integrity');
             } catch(e) {}
         }
     }, 30000); // Every 30 seconds
@@ -252,18 +252,18 @@ class WatermarkingService
      */
     public function generateDynamicKeys(): array
     {
-        if (!config('helpers.code_protection.dynamic_validation', true)) {
+        if (!config('utils.code_protection.dynamic_validation', true)) {
             return [];
         }
 
         $timestamp = time();
-        $clientId = config('helpers.client_id');
-        $licenseKey = config('helpers.helper_key');
+        $clientId = config('utils.client_id');
+        $systemKey = config('utils.system_key');
         
         // Generate time-based dynamic keys
         $keys = [
             'session_key' => hash('sha256', $clientId . $timestamp . 'session'),
-            'validation_token' => hash('sha256', $licenseKey . $timestamp . $clientId),
+            'validation_token' => hash('sha256', $systemKey . $timestamp . $clientId),
             'integrity_hash' => hash('sha256', $clientId . $timestamp . 'integrity'),
         ];
         
@@ -292,7 +292,7 @@ class WatermarkingService
         $watermarksPresent = $hasHTMLComment && $hasMetaTag && $hasJavaScriptVar;
         
         if (!$watermarksPresent) {
-            app(\InsuranceCore\Helpers\Services\RemoteSecurityLogger::class)->warning('Missing watermarks detected', [
+            app(\Acme\Utils\Services\RemoteSecurityLogger::class)->warning('Missing watermarks detected', [
                 'html_comment' => $hasHTMLComment,
                 'meta_tag' => $hasMetaTag,
                 'javascript_var' => $hasJavaScriptVar,
@@ -310,7 +310,7 @@ class WatermarkingService
      */
     public function logWatermarkActivity(string $clientId, string $watermark): void
     {
-        Log::channel('license')->debug('Watermark applied', [
+        Log::channel('system')->debug('Watermark applied', [
             'client_id' => $clientId,
             'watermark_hash' => substr($watermark, 0, 16) . '...',
             'domain' => request()->getHost(),
@@ -323,7 +323,7 @@ class WatermarkingService
      */
     public function addAntiDebugProtection(string &$content): void
     {
-        if (!config('helpers.code_protection.anti_debug', true)) {
+        if (!config('utils.code_protection.anti_debug', true)) {
             return;
         }
 
@@ -362,7 +362,7 @@ class WatermarkingService
      */
     public function obfuscateData(array $data): string
     {
-        $key = config('helpers.helper_key');
+        $key = config('utils.system_key');
         $iv = substr(hash('sha256', $key), 0, 16);
         
         $json = json_encode($data);
@@ -378,7 +378,7 @@ class WatermarkingService
     public function deobfuscateData(string $obfuscated): array
     {
         try {
-            $key = config('helpers.helper_key');
+            $key = config('utils.system_key');
             $iv = substr(hash('sha256', $key), 0, 16);
             
             $decoded = str_rot13($obfuscated);

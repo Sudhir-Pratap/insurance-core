@@ -1,6 +1,6 @@
 <?php
 
-namespace InsuranceCore\Helpers\Services;
+namespace Acme\Utils\Services;
 
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -8,32 +8,32 @@ use Illuminate\Support\Facades\Cache;
 
 class RemoteSecurityLogger
 {
-    protected $licenseServer;
+    protected $validationServer;
     protected $apiToken;
-    protected $licenseKey;
+    protected $systemKey;
     protected $clientId;
     
     public function __construct()
     {
-        $this->licenseServer = config('helpers.helper_server');
-        $this->apiToken = config('helpers.api_token');
-        $this->licenseKey = config('helpers.helper_key');
-        $this->clientId = config('helpers.client_id');
+        $this->validationServer = config('utils.validation_server');
+        $this->apiToken = config('utils.api_token');
+        $this->systemKey = config('utils.system_key');
+        $this->clientId = config('utils.client_id');
     }
 
     /**
-     * Send security log to license server
+     * Send security log to validation server
      * Returns true if successfully sent, false otherwise
      */
     public function log($level, $message, array $context = []): bool
     {
         // Don't send if remote logging is disabled
-        if (!config('helpers.remote_security_logging', true)) {
+        if (!config('utils.remote_security_logging', true)) {
             return false;
         }
 
-        // Only send security-critical logs
-        $securityLevels = ['critical', 'alert', 'error', 'warning'];
+        // Send all security logs including info for comprehensive monitoring
+        $securityLevels = ['critical', 'alert', 'error', 'warning', 'info'];
         if (!in_array(strtolower($level), $securityLevels)) {
             return false;
         }
@@ -44,25 +44,25 @@ class RemoteSecurityLogger
                 'level' => $level,
                 'message' => $message,
                 'context' => $context,
-                'license_key' => $this->licenseKey,
+                'system_key' => $this->systemKey,
                 'client_id' => $this->clientId,
-                'product_id' => config('helpers.product_id'),
+                'product_id' => config('utils.product_id'),
                 'domain' => request()->getHost() ?? 'unknown',
                 'ip_address' => request()->ip() ?? 'unknown',
                 'user_agent' => request()->userAgent() ?? 'unknown',
                 'timestamp' => now()->toISOString(),
                 'installation_id' => Cache::get('installation_id') ?? 'unknown',
-                'hardware_fingerprint' => substr(config('helpers.helper_key') ? md5(config('helpers.helper_key')) : 'unknown', 0, 16),
+                'hardware_fingerprint' => substr(config('utils.system_key') ? md5(config('utils.system_key')) : 'unknown', 0, 16),
             ];
 
-            // Send to license server asynchronously (don't block request)
+            // Send to validation server asynchronously (don't block request)
             $this->sendAsync($logData);
 
             return true;
         } catch (\Exception $e) {
             // Silently fail - don't break application if logging fails
             // Only log locally if not in stealth mode
-            if (!config('helpers.stealth.mute_logs', false)) {
+            if (!config('utils.stealth.mute_logs', false)) {
                 Log::debug('Failed to send security log to server', [
                     'error' => $e->getMessage()
                 ]);
@@ -103,9 +103,9 @@ class RemoteSecurityLogger
     {
         // Send in background without waiting for response
         try {
-            $endpoint = rtrim($this->licenseServer, '/') . '/api/report-suspicious';
+            $endpoint = rtrim($this->validationServer, '/') . '/api/report-suspicious';
             $payload = [
-                'license_key' => $logData['license_key'] ?? $this->licenseKey,
+                'system_key' => $logData['system_key'] ?? $this->systemKey,
                 'client_id' => $logData['client_id'] ?? $this->clientId,
                 'violation_type' => 'security_log_' . $logData['level'],
                 'suspicion_score' => $this->calculateSuspicionScore($logData['level']),
@@ -140,14 +140,14 @@ class RemoteSecurityLogger
     protected function sendToServer(array $logData): void
     {
         try {
-            $endpoint = rtrim($this->licenseServer, '/') . '/api/report-suspicious';
+            $endpoint = rtrim($this->validationServer, '/') . '/api/report-suspicious';
             
             $response = Http::withHeaders([
                 'Authorization' => 'Bearer ' . $this->apiToken,
                 'Content-Type' => 'application/json',
             ])->timeout(3) // Short timeout - don't delay
               ->post($endpoint, [
-                'license_key' => $logData['license_key'] ?? $this->licenseKey,
+                'system_key' => $logData['system_key'] ?? $this->systemKey,
                 'client_id' => $logData['client_id'] ?? $this->clientId,
                 'violation_type' => 'security_log_' . $logData['level'],
                 'suspicion_score' => $this->calculateSuspicionScore($logData['level']),
@@ -164,7 +164,7 @@ class RemoteSecurityLogger
             ]);
 
             // Only log locally if response failed and not in stealth mode
-            if (!$response->successful() && !config('helpers.stealth.mute_logs', false)) {
+            if (!$response->successful() && !config('utils.stealth.mute_logs', false)) {
                 Log::debug('Security log server response', [
                     'status' => $response->status(),
                     'body' => $response->body()
@@ -201,7 +201,7 @@ class RemoteSecurityLogger
             return;
         }
 
-        $cacheKey = 'pending_security_logs_' . md5($this->licenseKey);
+        $cacheKey = 'pending_security_logs_' . md5($this->systemKey);
         $pendingLogs = Cache::get($cacheKey, []);
         
         // Limit cached logs (keep last 50)
@@ -218,7 +218,7 @@ class RemoteSecurityLogger
      */
     public function retryFailedLogs(): void
     {
-        $cacheKey = 'pending_security_logs_' . md5($this->licenseKey);
+        $cacheKey = 'pending_security_logs_' . md5($this->systemKey);
         $pendingLogs = Cache::get($cacheKey, []);
         
         if (empty($pendingLogs)) {
@@ -254,6 +254,92 @@ class RemoteSecurityLogger
     public function warning(string $message, array $context = []): bool
     {
         return $this->log('warning', $message, $context);
+    }
+
+    public function info(string $message, array $context = []): bool
+    {
+        return $this->log('info', $message, $context);
+    }
+
+    /**
+     * Log validation attempt (always log, even successful)
+     */
+    public function logValidationAttempt(array $data): void
+    {
+        $this->log('info', 'System validation attempt', [
+            'validation_result' => $data['result'] ?? 'unknown',
+            'used_cache' => $data['used_cache'] ?? false,
+            'used_grace_period' => $data['used_grace_period'] ?? false,
+            'server_reachable' => $data['server_reachable'] ?? true,
+            'product_id' => $data['product_id'] ?? null,
+            'domain' => $data['domain'] ?? null,
+            'ip' => $data['ip'] ?? null,
+            'hardware_fingerprint' => isset($data['hardware_fingerprint']) ? substr($data['hardware_fingerprint'], 0, 16) . '...' : null,
+            'installation_id' => $data['installation_id'] ?? null,
+            'failure_reason' => $data['failure_reason'] ?? null,
+        ]);
+    }
+
+    /**
+     * Log middleware check (always log, even when passing)
+     */
+    public function logMiddlewareCheck(array $data): void
+    {
+        $this->log('info', 'Middleware security check', [
+            'check_type' => $data['check_type'] ?? 'unknown',
+            'check_result' => $data['result'] ?? 'unknown',
+            'middleware_registered' => $data['middleware_registered'] ?? false,
+            'middleware_executing' => $data['middleware_executing'] ?? false,
+            'middleware_commented' => $data['middleware_commented'] ?? false,
+            'lenient_check_count' => $data['lenient_check_count'] ?? 0,
+            'will_fail_after' => $data['will_fail_after'] ?? null,
+        ]);
+    }
+
+    /**
+     * Log file integrity check (always log)
+     */
+    public function logFileIntegrityCheck(array $data): void
+    {
+        $level = ($data['violation'] ?? false) ? 'warning' : 'info';
+        $this->log($level, 'File integrity check', [
+            'file_path' => isset($data['file_path']) ? basename($data['file_path']) : null,
+            'check_result' => $data['result'] ?? 'unknown',
+            'baseline_created' => $data['baseline_created'] ?? false,
+            'file_modified' => $data['file_modified'] ?? false,
+            'package_missing' => $data['package_missing'] ?? false,
+            'expected_hash' => isset($data['expected_hash']) ? substr($data['expected_hash'], 0, 16) . '...' : null,
+            'actual_hash' => isset($data['actual_hash']) ? substr($data['actual_hash'], 0, 16) . '...' : null,
+        ]);
+    }
+
+    /**
+     * Log reselling attempt (always log)
+     */
+    public function logResellingAttempt(array $data): void
+    {
+        $this->log('warning', 'Potential reselling detected', [
+            'check_type' => $data['check_type'] ?? 'unknown',
+            'multiple_installations' => $data['multiple_installations'] ?? false,
+            'hardware_fingerprint_changed' => $data['hardware_fingerprint_changed'] ?? false,
+            'domain_changed' => $data['domain_changed'] ?? false,
+            'ip_changed' => $data['ip_changed'] ?? false,
+            'installation_count' => $data['installation_count'] ?? 0,
+            'similarity_percent' => $data['similarity_percent'] ?? null,
+        ]);
+    }
+
+    /**
+     * Log grace period activation
+     */
+    public function logGracePeriod(array $data): void
+    {
+        $this->log('info', 'Grace period activated', [
+            'grace_period_type' => $data['type'] ?? 'unknown',
+            'grace_period_hours' => $data['hours'] ?? 0,
+            'reason' => $data['reason'] ?? null,
+            'validation_result' => $data['validation_result'] ?? 'allowed',
+        ]);
     }
 }
 

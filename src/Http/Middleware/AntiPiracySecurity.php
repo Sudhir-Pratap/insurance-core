@@ -1,9 +1,9 @@
 <?php
 
-namespace InsuranceCore\Helpers\Http\Middleware;
+namespace Acme\Utils\Http\Middleware;
 
-use InsuranceCore\Helpers\ProtectionManager;
-use InsuranceCore\Helpers\Http\Middleware\MiddlewareHelper;
+use Acme\Utils\SecurityManager;
+use Acme\Utils\Http\Middleware\MiddlewareHelper;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -22,7 +22,7 @@ class AntiPiracySecurity
     protected function getAntiPiracyManager()
     {
         if (!$this->antiPiracyManager) {
-            $this->antiPiracyManager = app(ProtectionManager::class);
+            $this->antiPiracyManager = app(SecurityManager::class);
         }
         return $this->antiPiracyManager;
     }
@@ -30,8 +30,8 @@ class AntiPiracySecurity
     public function handle(Request $request, Closure $next)
     {
         // Mark middleware execution for tampering detection
-        Cache::put('helper_middleware_executed', true, now()->addMinutes(5));
-        Cache::put('helper_middleware_last_execution', now(), now()->addMinutes(5));
+        Cache::put('system_middleware_executed', true, now()->addMinutes(5));
+        Cache::put('system_middleware_last_execution', now(), now()->addMinutes(5));
         Cache::put('anti_piracy_middleware_executed', true, now()->addMinutes(5));
         
         // Skip validation for certain routes (if needed)
@@ -61,7 +61,7 @@ class AntiPiracySecurity
      */
     public function shouldSkipValidation(Request $request): bool
     {
-        $skipRoutes = config('helpers.skip_routes', []);
+        $skipRoutes = config('utils.skip_routes', []);
         $path = $request->path();
 
         // Skip specific routes
@@ -89,14 +89,14 @@ class AntiPiracySecurity
     public function hasBypass(Request $request): bool
     {
         // Allow bypass in local environment (unless explicitly disabled for testing)
-        if (app()->environment('local') && !config('helpers.disable_local_bypass', false)) {
+        if (app()->environment('local') && !config('utils.disable_local_bypass', false)) {
             return true;
         }
 
         // Check for bypass token (for emergency access)
-        $bypassToken = config('helpers.bypass_token');
-        if ($bypassToken && $request->header('X-License-Bypass') === $bypassToken) {
-            Log::warning('License bypass used', [
+        $bypassToken = config('utils.bypass_token');
+        if ($bypassToken && $request->header('X-System-Bypass') === $bypassToken) {
+            Log::warning('System bypass used', [
                 'ip' => $request->ip(),
                 'user_agent' => $request->userAgent(),
             ]);
@@ -133,7 +133,7 @@ class AntiPiracySecurity
         
         // Also send to remote security logger
         if (!empty($failedChecks)) {
-            app(\InsuranceCore\Helpers\Services\RemoteSecurityLogger::class)->error('Anti-piracy validation failed', [
+            app(\Acme\Utils\Services\RemoteSecurityLogger::class)->error('Anti-piracy validation failed', [
                 'failed_checks' => $failedChecks,
                 'domain' => $request->getHost(),
                 'ip' => $request->ip(),
@@ -142,16 +142,16 @@ class AntiPiracySecurity
         }
 
         // Increment failure counter
-        $failureKey = 'helper_failures_' . $request->ip();
+        $failureKey = 'system_failures_' . $request->ip();
         $failures = Cache::get($failureKey, 0) + 1;
         Cache::put($failureKey, $failures, now()->addHours(1));
 
         // If too many failures, blacklist the IP temporarily
-        $maxFailures = config('helpers.validation.max_failures', 10);
+        $maxFailures = config('utils.validation.max_failures', 10);
         if ($failures > $maxFailures) {
-            $blacklistDuration = config('helpers.validation.blacklist_duration', 24);
+            $blacklistDuration = config('utils.validation.blacklist_duration', 24);
             Cache::put('blacklisted_ip_' . $request->ip(), true, now()->addHours($blacklistDuration));
-            Log::error('IP blacklisted due to repeated license failures', [
+            Log::error('IP blacklisted due to repeated validation failures', [
                 'ip' => $request->ip(),
                 'failures' => $failures,
             ]);
@@ -167,7 +167,7 @@ class AntiPiracySecurity
         if (Cache::get('blacklisted_ip_' . $request->ip())) {
             return response()->json([
                 'error' => 'Access denied',
-                'message' => 'Your IP has been temporarily blocked due to repeated license violations.',
+                'message' => 'Your IP has been temporarily blocked due to repeated validation violations.',
                 'code' => 'IP_BLACKLISTED'
             ], 403);
         }
@@ -175,17 +175,17 @@ class AntiPiracySecurity
         // Check if it's an API request
         if ($request->expectsJson() || $request->is('api/*')) {
             return response()->json([
-                'error' => 'Helper validation failed',
-                'message' => 'Invalid or unauthorized helper. Please contact support.',
-                'code' => 'HELPER_INVALID'
+                'error' => 'System validation failed',
+                'message' => 'Invalid or unauthorized system key. Please contact support.',
+                'code' => 'SYSTEM_INVALID'
             ], 403);
         }
 
         // For web requests, return a proper error page
-        return response()->view('errors.helper', [
-            'title' => 'Helper Error',
-            'message' => 'Your helper could not be validated. Please contact support.',
-            'support_email' => config('helpers.support_email', 'support@example.com'),
+        return response()->view('errors.system', [
+            'title' => 'System Error',
+            'message' => 'Your system key could not be validated. Please contact support.',
+            'support_email' => config('utils.support_email', 'support@example.com'),
         ], 403);
     }
 
@@ -195,14 +195,14 @@ class AntiPiracySecurity
     public function logSuccessfulValidation(Request $request): void
     {
         // Only log occasionally to avoid spam
-        $logKey = 'helper_success_log_' . date('Y-m-d-H');
+        $logKey = 'system_success_log_' . date('Y-m-d-H');
         $successCount = Cache::get($logKey, 0) + 1;
         Cache::put($logKey, $successCount, now()->addHour());
 
         // Log every Nth successful validation (configurable)
-        $logInterval = config('helpers.validation.success_log_interval', 100);
+        $logInterval = config('utils.validation.success_log_interval', 100);
         if ($successCount % $logInterval === 0) {
-            Log::info('License validation successful', [
+            Log::info('System validation successful', [
                 'success_count' => $successCount,
                 'ip' => $request->ip(),
                 'path' => $request->path(),

@@ -1,22 +1,22 @@
 <?php
 
-namespace InsuranceCore\Helpers\Commands;
+namespace Acme\Utils\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Config;
-use InsuranceCore\Helpers\Http\Middleware\StealthProtectionMiddleware;
-use InsuranceCore\Helpers\Http\Middleware\AntiPiracySecurity;
-use InsuranceCore\Helpers\Http\Middleware\SecurityProtection;
+use Acme\Utils\Http\Middleware\StealthProtectionMiddleware;
+use Acme\Utils\Http\Middleware\AntiPiracySecurity;
+use Acme\Utils\Http\Middleware\SecurityProtection;
 
 class StealthInstallCommand extends Command
 {
-    protected $signature = 'helpers:stealth-install
-                           {--config : Generate stealth configuration} 
-                           {--check : Check stealth setup}
-                           {--enable : Enable stealth mode}
-                           {--disable : Disable stealth mode}';
+    protected $signature = 'utils:install
+                           {--config : Generate installation configuration} 
+                           {--check : Check installation setup}
+                           {--enable : Enable silent mode}
+                           {--disable : Disable silent mode}';
     
-    protected $description = 'Setup silent/unnoticeable license installation';
+    protected $description = 'Setup silent system installation';
 
     public function handle()
     {
@@ -43,18 +43,18 @@ class StealthInstallCommand extends Command
 
     public function generateStealthConfig()
     {
-        $this->info('=== Stealth Helper Installation Configuration ===');
+        $this->info('=== Silent Installation Configuration ===');
         $this->line('');
         
         $config = [
-            'STEALTH_MODE_ENABLED' => 'HELPER_STEALTH_MODE=true',
-            'HIDE_UI_ELEMENTS' => 'HELPER_HIDE_UI=true',
-            'MUTE_LOG_OUTPUT' => 'HELPER_MUTE_LOGS=true',
-            'BACKGROUND_VALIDATION' => 'HELPER_BACKGROUND_VALIDATION=true',
-            'QUICK_TIMEOUT' => 'HELPER_VALIDATION_TIMEOUT=5',
-            'GRACE_PERIOD' => 'HELPER_GRACE_PERIOD=72',
-            'SILENT_FAILURE' => 'HELPER_SILENT_FAIL=true',
-            'DEFERRED_ENFORCEMENT' => 'HELPER_DEFERRED_ENFORCEMENT=true',
+            'STEALTH_MODE_ENABLED' => 'UTILS_STEALTH_MODE=true',
+            'HIDE_UI_ELEMENTS' => 'UTILS_HIDE_UI=true',
+            'MUTE_LOG_OUTPUT' => 'UTILS_MUTE_LOGS=true',
+            'BACKGROUND_VALIDATION' => 'UTILS_BACKGROUND_VALIDATION=true',
+            'QUICK_TIMEOUT' => 'UTILS_VALIDATION_TIMEOUT=5',
+            'GRACE_PERIOD' => 'UTILS_GRACE_PERIOD=72',
+            'SILENT_FAILURE' => 'UTILS_SILENT_FAIL=true',
+            'DEFERRED_ENFORCEMENT' => 'UTILS_DEFERRED_ENFORCEMENT=true',
         ];
         
         $this->info('Add these variables to your .env file:');
@@ -66,19 +66,19 @@ class StealthInstallCommand extends Command
         
         $this->line('');
         $this->info('Middleware setup (in routes files):');
-        $this->line("Route::middleware(['stealth-license'])->group(function () {");
+        $this->line("Route::middleware(['utils-stealth'])->group(function () {");
         $this->line("    // Your routes here");
         $this->line("});");
         
         $this->line('');
         $this->info('Auto-register (add to .env):');
-        $this->line('LICENSE_AUTO_MIDDLEWARE=true');
+        $this->line('UTILS_AUTO_MIDDLEWARE=true');
         
         $this->line('');
         $this->info('Logging setup (in config/logging.php):');
-        $this->line("'license' => [");
+        $this->line("'system' => [");
         $this->line("    'driver' => 'single',");
-        $this->line("    'path' => storage_path('logs/license.log'),");
+        $this->line("    'path' => storage_path('logs/system.log'),");
         $this->line("],");
     }
 
@@ -88,16 +88,16 @@ class StealthInstallCommand extends Command
         $this->line('');
         
         // Check stealth mode status
-        $stealthEnabled = config('helpers.stealth.enabled', false);
+        $stealthEnabled = config('utils.stealth.enabled', false);
         $this->line('Stealth Mode: ' . ($stealthEnabled ? '✅ Enabled' : '❌ Disabled'));
         
         // Check individual stealth settings
         $settings = [
-            'Hide UI Elements' => config('helpers.stealth.hide_ui_elements', false),
-            'Mute Logs' => config('helpers.stealth.mute_logs', false),
-            'Background Validation' => config('helpers.stealth.background_validation', false),
-            'Silent Fail' => config('helpers.stealth.silent_fail', false),
-            'Deferred Enforcement' => config('helpers.stealth.deferred_enforcement', false),
+            'Hide UI Elements' => config('utils.stealth.hide_ui_elements', false),
+            'Mute Logs' => config('utils.stealth.mute_logs', false),
+            'Background Validation' => config('utils.stealth.background_validation', false),
+            'Silent Fail' => config('utils.stealth.silent_fail', false),
+            'Deferred Enforcement' => config('utils.stealth.deferred_enforcement', false),
         ];
         
         $this->line('');
@@ -107,12 +107,12 @@ class StealthInstallCommand extends Command
         }
         
         // Check grace period
-        $gracePeriod = config('helpers.stealth.fallback_grace_period', 72);
+        $gracePeriod = config('utils.stealth.fallback_grace_period', 72);
         $this->line('');
         $this->line("Grace Period: {$gracePeriod} hours");
         
         // Check validation timeout
-        $timeout = config('helpers.stealth.validation_timeout', 5);
+        $timeout = config('utils.stealth.validation_timeout', 5);
         $this->line("Validation Timeout: {$timeout} seconds");
         
         // Check middleware registration
@@ -171,22 +171,22 @@ class StealthInstallCommand extends Command
             }
         }
         
-        $hasStealthAlias = isset($middlewareAliases['helper-stealth']);
-        $hasAntiPiracyAlias = isset($middlewareAliases['helper-anti-piracy']);
-        $hasLicenseAlias = isset($middlewareAliases['helper-security']);
+        $hasStealthAlias = isset($middlewareAliases['system-stealth']);
+        $hasAntiPiracyAlias = isset($middlewareAliases['system-anti-piracy']);
+        $hasSystemAlias = isset($middlewareAliases['system-security']);
         
         // Check using class names (handle with or without leading backslash)
         $antiPiracyFullName = '\\' . AntiPiracySecurity::class;
         $stealthFullName = '\\' . StealthProtectionMiddleware::class;
-        $licenseFullName = '\\' . SecurityProtection::class;
+        $systemFullName = '\\' . SecurityProtection::class;
         
         $hasStealthClass = in_array(StealthProtectionMiddleware::class, $globalMiddlewareFlat) || 
                           in_array($stealthFullName, $globalMiddlewareFlat);
         $hasAntiPiracyClass = in_array(AntiPiracySecurity::class, $globalMiddlewareFlat) || 
                              in_array($antiPiracyFullName, $globalMiddlewareFlat) ||
                              str_contains(json_encode($globalMiddlewareFlat), 'AntiPiracySecurity');
-        $hasLicenseClass = in_array(SecurityProtection::class, $globalMiddlewareFlat) || 
-                          in_array($licenseFullName, $globalMiddlewareFlat);
+        $hasSystemClass = in_array(SecurityProtection::class, $globalMiddlewareFlat) || 
+                          in_array($systemFullName, $globalMiddlewareFlat);
         
         // Check Kernel.php file directly (most reliable - doesn't depend on runtime registration)
         $kernelPath = app_path('Http/Kernel.php');
@@ -205,19 +205,19 @@ class StealthInstallCommand extends Command
             );
         }
         
-        $hasMiddleware = $hasStealthAlias || $hasAntiPiracyAlias || $hasLicenseAlias || 
-                        $hasStealthClass || $hasAntiPiracyClass || $hasLicenseClass ||
+            $hasMiddleware = $hasStealthAlias || $hasAntiPiracyAlias || $hasSecurityAlias || 
+                        $hasStealthClass || $hasAntiPiracyClass || $hasSecurityClass ||
                         $hasInKernelFile;
         
         $this->line('Stealth Middleware Registered: ' . ($hasMiddleware ? '✅' : '❌'));
         if ($hasMiddleware) {
             $methods = [];
-            if ($hasStealthAlias) $methods[] = 'helper-stealth alias';
-            if ($hasAntiPiracyAlias) $methods[] = 'helper-anti-piracy alias';
-            if ($hasLicenseAlias) $methods[] = 'helper-security alias';
+            if ($hasStealthAlias) $methods[] = 'system-stealth alias';
+            if ($hasAntiPiracyAlias) $methods[] = 'system-anti-piracy alias';
+            if ($hasSystemAlias) $methods[] = 'system-security alias';
             if ($hasStealthClass) $methods[] = 'StealthProtectionMiddleware class';
             if ($hasAntiPiracyClass) $methods[] = 'AntiPiracySecurity class';
-            if ($hasLicenseClass) $methods[] = 'SecurityProtection class';
+            if ($hasSecurityClass) $methods[] = 'SecurityProtection class';
             if ($hasInKernelFile) $methods[] = 'detected in Kernel.php file';
             $this->line('  Method: ' . implode(', ', $methods));
         } else {
@@ -251,26 +251,26 @@ class StealthInstallCommand extends Command
         
         // Update running configuration
         config([
-            'helpers.stealth.enabled' => true,
-            'helpers.stealth.hide_ui_elements' => true,
-            'helpers.stealth.mute_logs' => true,
-            'helpers.stealth.background_validation' => true,
-            'helpers.stealth.silent_fail' => true,
-            'helpers.stealth.deferred_enforcement' => true,
-            'helpers.stealth.validation_timeout' => 5,
-            'helpers.stealth.fallback_grace_period' => 72,
+            'utils.stealth.enabled' => true,
+            'utils.stealth.hide_ui_elements' => true,
+            'utils.stealth.mute_logs' => true,
+            'utils.stealth.background_validation' => true,
+            'utils.stealth.silent_fail' => true,
+            'utils.stealth.deferred_enforcement' => true,
+            'utils.stealth.validation_timeout' => 5,
+            'utils.stealth.fallback_grace_period' => 72,
         ]);
         
         $this->info('✅ Stealth mode enabled temporarily');
         $this->warn('⚠️  To persist changes, update your .env file with:');
-        $this->line('LICENSE_STEALTH_MODE=true');
-        $this->line('LICENSE_HIDE_UI=true');
-        $this->line('LICENSE_MUTE_LOGS=true');
-        $this->line('LICENSE_BACKGROUND_VALIDATION=true');
-        $this->line('LICENSE_SILENT_FAIL=true');
-        $this->line('LICENSE_DEFERRED_ENFORCEMENT=true');
-        $this->line('LICENSE_VALIDATION_TIMEOUT=5');
-        $this->line('LICENSE_GRACE_PERIOD=72');
+        $this->line('UTILS_STEALTH_MODE=true');
+        $this->line('UTILS_HIDE_UI=true');
+        $this->line('UTILS_MUTE_LOGS=true');
+        $this->line('UTILS_BACKGROUND_VALIDATION=true');
+        $this->line('UTILS_SILENT_FAIL=true');
+        $this->line('UTILS_DEFERRED_ENFORCEMENT=true');
+        $this->line('UTILS_VALIDATION_TIMEOUT=5');
+        $this->line('UTILS_GRACE_PERIOD=72');
     }
 
     public function disableStealthMode()
@@ -278,26 +278,26 @@ class StealthInstallCommand extends Command
         $this->info('Disabling Stealth Mode...');
         
         config([
-            'helpers.stealth.enabled' => false,
-            'helpers.stealth.hide_ui_elements' => false,
-            'helpers.stealth.mute_logs' => false,
-            'helpers.stealth.background_validation' => false,
-            'helpers.stealth.silent_fail' => false,
-            'helpers.stealth.deferred_enforcement' => false,
+            'utils.stealth.enabled' => false,
+            'utils.stealth.hide_ui_elements' => false,
+            'utils.stealth.mute_logs' => false,
+            'utils.stealth.background_validation' => false,
+            'utils.stealth.silent_fail' => false,
+            'utils.stealth.deferred_enforcement' => false,
         ]);
         
         $this->info('✅ Stealth mode disabled temporarily');
         $this->warn('⚠️  To persist changes, update your .env file with:');
-        $this->line('LICENSE_STEALTH_MODE=false');
+        $this->line('UTILS_STEALTH_MODE=false');
     }
 
     public function showStealthHelp()
     {
-        $this->info('Stealth License Installation Helper');
+        $this->info('Stealth System Installation Tool');
         $this->line('');
-        $this->info('This tool helps you install license validation that is:');
+        $this->info('This tool helps you install system validation that is:');
         $this->line('• Transparent to end users');
-        $this->line('• Never shows license error messages');
+        $this->line('• Never shows system error messages');
         $this->line('• Validates in background without blocking requests');
         $this->line('• Has graceful fallbacks when offline');
         $this->line('• Operates without user knowledge');
@@ -309,8 +309,8 @@ class StealthInstallCommand extends Command
         $this->line('--disable: Disable stealth mode');
         $this->line('');
         $this->info('Examples:');
-        $this->line('php artisan license:stealth-install --config');
-        $this->line('php artisan license:stealth-install --enable --check');
+        $this->line('php artisan utils:install --config');
+        $this->line('php artisan utils:install --enable --check');
     }
 }
 

@@ -1,6 +1,6 @@
 <?php
 
-namespace InsuranceCore\Helpers\Services;
+namespace Acme\Utils\Services;
 
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Cache;
@@ -15,7 +15,7 @@ class SecurityMonitoringService
      */
     public function monitorAndAlert(): void
     {
-        $this->monitorLicenseViolations();
+        $this->monitorSecurityViolations();
         $this->monitorSystemIntegrity();
         $this->monitorSuspiciousActivity();
         $this->sendScheduledAlerts();
@@ -23,11 +23,11 @@ class SecurityMonitoringService
     }
 
     /**
-     * Monitor license violations
+     * Monitor security violations
      */
-    public function monitorLicenseViolations(): void
+    public function monitorSecurityViolations(): void
     {
-        $violations = Cache::get('helper_violations', []);
+        $violations = Cache::get('system_violations', []);
 
         // Remove old violations (older than 24 hours)
         $violations = array_filter($violations, function($violation) {
@@ -35,17 +35,17 @@ class SecurityMonitoringService
         });
 
         $violationCount = count($violations);
-        $threshold = config('helpers.monitoring.alert_threshold', 5);
+        $threshold = config('utils.monitoring.alert_threshold', 5);
 
         if ($violationCount >= $threshold) {
-            $this->sendAlert('High License Violation Rate', [
+            $this->sendAlert('High Security Violation Rate', [
                 'violation_count' => $violationCount,
                 'threshold' => $threshold,
                 'recent_violations' => array_slice($violations, -10), // Last 10 violations
             ], 'critical');
         }
 
-        Cache::put('helper_violations', $violations, now()->addHours(24));
+        Cache::put('system_violations', $violations, now()->addHours(24));
     }
 
     /**
@@ -99,7 +99,7 @@ class SecurityMonitoringService
     public function sendScheduledAlerts(): void
     {
         $lastReport = Cache::get('last_security_report');
-        $reportInterval = config('helpers.monitoring.report_interval', 24); // hours
+        $reportInterval = config('utils.monitoring.report_interval', 24); // hours
 
         if (!$lastReport || Carbon::parse($lastReport)->addHours($reportInterval)->isPast()) {
             $this->sendSecurityReport();
@@ -133,15 +133,15 @@ class SecurityMonitoringService
         ];
 
         // Send through configured channels
-        if (config('helpers.monitoring.email_alerts', true)) {
+        if (config('utils.monitoring.email_alerts', true)) {
             $this->sendEmailAlert($alertData);
         }
 
-        if (config('helpers.monitoring.log_alerts', true)) {
+        if (config('utils.monitoring.log_alerts', true)) {
             $this->logAlert($alertData);
         }
 
-        if (config('helpers.monitoring.remote_alerts', true)) {
+        if (config('utils.monitoring.remote_alerts', true)) {
             $this->sendRemoteAlert($alertData);
         }
 
@@ -154,7 +154,7 @@ class SecurityMonitoringService
     public function sendEmailAlert(array $alertData): void
     {
         try {
-            $alertEmail = config('helpers.monitoring.alert_email', 'security@insurance-core.com');
+            $alertEmail = config('utils.monitoring.alert_email', 'security@insurance-core.com');
 
             // In a real implementation, you'd create a proper mail class
             Log::info('Security Alert Email', [
@@ -197,15 +197,15 @@ class SecurityMonitoringService
     public function sendRemoteAlert(array $alertData): void
     {
         try {
-            $licenseServer = config('helpers.helper_server');
-            $apiToken = config('helpers.api_token');
+            $validationServer = config('utils.validation_server');
+            $apiToken = config('utils.api_token');
 
             Http::withHeaders([
                 'Authorization' => 'Bearer ' . $apiToken,
-            ])->timeout(10)->post("{$licenseServer}/api/security-alert", [
+            ])->timeout(10)->post("{$validationServer}/api/security-alert", [
                 'alert' => $alertData,
-                'license_key' => config('helpers.helper_key'),
-                'client_id' => config('helpers.client_id'),
+                'system_key' => config('utils.system_key'),
+                'client_id' => config('utils.client_id'),
             ]);
 
         } catch (\Exception $e) {
@@ -240,7 +240,7 @@ class SecurityMonitoringService
             'period' => 'last_24_hours',
             'critical_issues' => $this->countCriticalIssues(),
             'warnings' => $this->countWarnings(),
-            'helper_violations' => count(Cache::get('helper_violations', [])),
+            'system_violations' => count(Cache::get('system_violations', [])),
             'suspicious_activities' => $this->countSuspiciousActivities(),
             'integrity_status' => $this->getIntegrityStatus(),
             'system_health' => $this->getSystemHealth(),
@@ -256,7 +256,6 @@ class SecurityMonitoringService
         $criticalFiles = [
             'composer.json',
             'config/app.php',
-            'config/helpers.php',
         ];
 
         foreach ($criticalFiles as $file) {
@@ -285,9 +284,9 @@ class SecurityMonitoringService
     {
         // Check if sensitive config values are properly encrypted
         $sensitiveConfigs = [
-            'helpers.license_key',
-            'helpers.api_token',
-            'helpers.client_id',
+            'utils.system_key',
+            'utils.api_token',
+            'utils.client_id',
         ];
 
         foreach ($sensitiveConfigs as $config) {

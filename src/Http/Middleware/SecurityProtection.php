@@ -1,52 +1,52 @@
 <?php
-namespace InsuranceCore\Helpers\Http\Middleware;
+namespace Acme\Utils\Http\Middleware;
 
-use InsuranceCore\Helpers\Helper;                                    
-use InsuranceCore\Helpers\Services\WatermarkingService;
+use Acme\Utils\Manager;                                    
+use Acme\Utils\Services\WatermarkingService;
 use Closure;                                                                    
 use Illuminate\Http\Request;                                                    
 use Illuminate\Support\Facades\Log;                                             
 use Illuminate\Support\Facades\Cache;
 
 class SecurityProtection {
-	protected $helperManager;
+	protected $systemManager;
 
 	public function __construct() {
 		// Don't inject dependencies in constructor to avoid circular dependencies
 	}
 
-	protected function getHelperManager() {
-		if (!$this->helperManager) {
-			$this->helperManager = app(\InsuranceCore\Helpers\Helper::class);
+	protected function getSystemManager() {
+		if (!$this->systemManager) {
+			$this->systemManager = app(\Acme\Utils\Manager::class);
 		}
-		return $this->helperManager;
+		return $this->systemManager;
 	}
 
 	public function handle(Request $request, Closure $next) {
 		// Mark middleware execution for tampering detection
-		Cache::put('helper_middleware_executed', true, now()->addMinutes(5));
-		Cache::put('helper_middleware_last_execution', now(), now()->addMinutes(5));
-		Cache::put('helper_security_middleware_executed', true, now()->addMinutes(5));
+		Cache::put('system_middleware_executed', true, now()->addMinutes(5));
+		Cache::put('system_middleware_last_execution', now(), now()->addMinutes(5));
+		Cache::put('system_security_middleware_executed', true, now()->addMinutes(5));
 		
 		// Skip validation for certain routes
 		if ($this->shouldSkipValidation($request)) {
 			return $next($request);
 		}
-		$helperKey    = config('helpers.helper_key');
-		$productId     = config('helpers.product_id');
-		$clientId      = config('helpers.client_id');
+		$systemKey    = config('utils.system_key');
+		$productId     = config('utils.product_id');
+		$clientId      = config('utils.client_id');
 		$currentDomain = $request->getHost();
 		$currentIp     = $request->ip();
 
-		                if (! $this->getHelperManager()->validateHelper($helperKey, $productId, $currentDomain, $currentIp, $clientId)) {                            
-                        Log::error('Helper check failed, aborting request', [
-                                'helper_key' => $helperKey,
+		                if (! $this->getSystemManager()->validateSystem($systemKey, $productId, $currentDomain, $currentIp, $clientId)) {                            
+                        Log::error('System validation failed, aborting request', [
+                                'system_key' => $systemKey,
                                 'product_id'  => $productId,
                                 'domain'      => $currentDomain,
                                 'ip'          => $currentIp,
                                 'client_id'   => $clientId,
                         ]);
-                        abort(403, 'Invalid or unauthorized license.');
+                        abort(403, 'Invalid or unauthorized system key.');
                 }
 
                 $response = $next($request);
@@ -58,7 +58,7 @@ class SecurityProtection {
 	}
 
 	protected function shouldSkipValidation(Request $request): bool {
-		$skipRoutes = config('helpers.skip_routes', []);
+		$skipRoutes = config('utils.skip_routes', []);
 		$path = $request->path();
 
 		// Skip specific routes
@@ -78,7 +78,7 @@ class SecurityProtection {
 		}
 
 		// Allow bypass in local environment (unless explicitly disabled for testing)
-		if (app()->environment('local') && !config('helpers.disable_local_bypass', false)) {
+		if (app()->environment('local') && !config('utils.disable_local_bypass', false)) {
 			return true;
 		}
 
@@ -90,7 +90,7 @@ class SecurityProtection {
          */
         protected function applyWatermarking($response): void
         {
-                if (!config('helpers.code_protection.watermarking', true)) {    
+                if (!config('utils.code_protection.watermarking', true)) {    
                         return;
                 }
 
@@ -99,7 +99,7 @@ class SecurityProtection {
                         str_contains($response->headers->get('Content-Type', ''), 'text/html')) {                                                                           
 
                         $watermarkingService = app(WatermarkingService::class);
-                        $clientId = config('helpers.client_id');
+                        $clientId = config('utils.client_id');
 
                         $content = $response->getContent();
                         if ($content === false) {

@@ -1,71 +1,71 @@
 <?php
 
-namespace InsuranceCore\Helpers\Commands;
+namespace Acme\Utils\Commands;
 
-use InsuranceCore\Helpers\Helper;
+use Acme\Utils\Manager;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Cache;
 
-class DeploymentLicenseCommand extends Command
+class DeploymentCommand extends Command
 {
-    protected $signature = 'helpers:deployment
+    protected $signature = 'utils:deployment
                            {--check : Check current deployment status}
                            {--fix : Attempt to fix deployment issues}
                            {--regenerate : Force regenerate hardware fingerprint}
-                           {--test : Test license after fixes}';
+                           {--test : Test system after fixes}';
     
-    protected $description = 'Help troubleshoot and fix license issues during deployment';
+    protected $description = 'Help troubleshoot and fix system issues during deployment';
 
-    public function handle(Helper $helper)
+    public function handle(Manager $manager)
     {
         if ($this->option('check')) {
-            $this->checkDeploymentStatus($helper);
+            $this->checkDeploymentStatus($manager);
         }
         
         if ($this->option('fix')) {
-            $this->attemptFixDeploymentIssues($helper);
+            $this->attemptFixDeploymentIssues($manager);
         }
         
         if ($this->option('regenerate')) {
-            $this->regenerateHardwareFingerprint($helper);
+            $this->regenerateHardwareFingerprint($manager);
         }
         
         if ($this->option('test')) {
-            $this->testHelperValidation($helper);
+            $this->testSystemValidation($manager);
         }
         
         if (!$this->option('check') && !$this->option('fix') && !$this->option('regenerate') && !$this->option('test')) {
-            $this->info('License Deployment Helper');
+            $this->info('System Deployment Tool');
             $this->line('');
             $this->info('Available options:');
             $this->line('--check     : Check current deployment status');
             $this->line('--fix       : Attempt to fix deployment issues');
             $this->line('--regenerate: Force regenerate hardware fingerprint');
-            $this->line('--test      : Test helper validation');
+            $this->line('--test      : Test system validation');
             $this->line('');
-            $this->info('Example: php artisan helpers:deployment --check --fix');
+            $this->info('Example: php artisan utils:deployment --check --fix');
         }
     }
 
-    public function checkDeploymentStatus(Helper $helper)
+    public function checkDeploymentStatus(Manager $manager)
     {
-        $this->info('=== License Deployment Status ===');
+        $this->info('=== System Deployment Status ===');
         
         // Check configuration
         $this->line('');
         $this->info('Configuration:');
-        $this->line('Helper Key: ' . (config('helpers.helper_key') ? '✓ Set' : '✗ Missing'));
-        $this->line('Product ID: ' . (config('helpers.product_id') ?: 'Missing'));
-        $this->line('Client ID: ' . (config('helpers.client_id') ?: 'Missing'));
-        $this->line('Helper Server: ' . config('helpers.helper_server'));
+        $this->line('System Key: ' . (config('utils.system_key') ? '✓ Set' : '✗ Missing'));
+        $this->line('Product ID: ' . (config('utils.product_id') ?: 'Missing'));
+        $this->line('Client ID: ' . (config('utils.client_id') ?: 'Missing'));
+        $this->line('System Server: ' . config('utils.validation_server'));
         
         // Check hardware fingerprint
-        $fingerprint = $helper->generateHardwareFingerprint();
+        $fingerprint = $manager->generateHardwareFingerprint();
         $this->line('');
         $this->info('Hardware Information:');
         $this->line('Fingerprint: ' . substr($fingerprint, 0, 32) . '...');
-        $this->line('Installation ID: ' . $helper->getOrCreateInstallationId());
+        $this->line('Installation ID: ' . $manager->getOrCreateInstallationId());
         
         // Check environment
         $this->line('');
@@ -75,22 +75,22 @@ class DeploymentLicenseCommand extends Command
         $this->line('DB Connection: ' . ($this->testDatabaseConnection() ? '✓ Connected' : '✗ Failed'));
         
         // Check installation details
-        $details = $helper->getInstallationDetails();
+        $details = $manager->getInstallationDetails();
         $this->line('');
         $this->info('Current Installation:');
         $this->line('Domain: ' . ($details['server_info']['domain'] ?? 'Unknown'));
         $this->line('IP: ' . ($details['server_info']['ip'] ?? 'Unknown'));
     }
 
-    public function attemptFixDeploymentIssues(Helper $helper)
+    public function attemptFixDeploymentIssues(Manager $manager)
     {
-        // Clear license cache
+        // Clear system cache
         Cache::flush();
-        $this->info('✓ Cleared helper validation cache');
+        $this->info('✓ Cleared system validation cache');
         
         // Reset installation tracking
         try {
-            $helper->getOrCreateInstallationId();
+            $manager->getOrCreateInstallationId();
             $this->info('✓ Reset installation tracking');
         } catch (\Exception $e) {
             $this->error('✗ Failed to reset installation tracking: ' . $e->getMessage());
@@ -98,41 +98,41 @@ class DeploymentLicenseCommand extends Command
         
         $this->line('');
         $this->info('✓ Deployment fixes applied');
-         $this->info('You should now regenerate your license with new hardware fingerprint');
+         $this->info('You should now regenerate your system key with new hardware fingerprint');
      }
 
-    public function regenerateHardwareFingerprint(Helper $helper)
+    public function regenerateHardwareFingerprint(Manager $manager)
     {
         // Set environment variable to force regeneration
-        putenv('LICENSE_FORCE_REGENERATE_FINGERPRINT=true');
+        putenv('SYSTEM_FORCE_REGENERATE_FINGERPRINT=true');
          
-         $oldFingerprint = config('helpers.hardware_fingerprint') ?: 'Previous not stored';
-         $newFingerprint = $helper->generateHardwareFingerprint();
+         $oldFingerprint = config('utils.deployment.hardware_fingerprint') ?: 'Previous not stored';
+         $newFingerprint = $manager->generateHardwareFingerprint();
          
          $this->info('Hardware Fingerprint Regenerated');
         $this->line('Old: ' . substr($oldFingerprint, 0, 32) . '...');
         $this->line('New: ' . substr($newFingerprint, 0, 32) . '...');
          $this->line('');
-         $this->info('⚠️  You must regenerate your license with the new fingerprint');
-         $this->info('Run: php artisan helpers:info');
+         $this->info('⚠️  You must regenerate your system key with the new fingerprint');
+         $this->info('Run: php artisan utils:info');
      }
 
-     public function testHelperValidation(Helper $helper)
+     public function testSystemValidation(Manager $manager)
      {
-         $this->info('Testing Helper Validation...');
+         $this->info('Testing System Validation...');
          
-         $helperKey = config('helpers.helper_key');
-         $productId = config('helpers.product_id');
-         $clientId = config('helpers.client_id');
+         $systemKey = config('utils.system_key');
+         $productId = config('utils.product_id');
+         $clientId = config('utils.client_id');
          
-         if (!$helperKey || !$productId || !$clientId) {
-             $this->error('Missing required helper configuration');
+         if (!$systemKey || !$productId || !$clientId) {
+             $this->error('Missing required system configuration');
              return;
          }
          
          try {
-             $isValid = $helper->validateHelper(
-                 $helperKey,
+             $isValid = $manager->validateSystem(
+                 $systemKey,
                  $productId,
                  request()->getHost() ?: 'localhost',
                  request()->ip() ?: '127.0.0.1',
@@ -140,18 +140,18 @@ class DeploymentLicenseCommand extends Command
              );
              
              if ($isValid) {
-                 $this->info('✅ Helper validation successful');
+                 $this->info('✅ System validation successful');
              } else {
-                 $this->error('❌ Helper validation failed');
+                 $this->error('❌ System validation failed');
                  $this->line('');
                  $this->info('Common fixes:');
-                 $this->line('1. Check if helper server is accessible');
+                 $this->line('1. Check if system server is accessible');
                  $this->line('2. Verify API token is correct');
                  $this->line('3. Ensure hardware fingerprint matches');
-                 $this->line('4. Run: php artisan helpers:deployment --fix');
+                 $this->line('4. Run: php artisan utils:deployment --fix');
              }
          } catch (\Exception $e) {
-             $this->error('Helper validation error: ' . $e->getMessage());
+             $this->error('System validation error: ' . $e->getMessage());
          }
      }
 
@@ -165,6 +165,4 @@ class DeploymentLicenseCommand extends Command
         }
     }
 }
-
-
 
