@@ -1,11 +1,11 @@
 <?php
 
-namespace InsuranceCore\Helpers\Services;
+namespace Acme\Utils\Services;
 
 use Illuminate\Support\Facades\Log;                                             
 use Illuminate\Support\Facades\Cache;                                           
 use Illuminate\Support\Facades\File;
-use InsuranceCore\Helpers\Services\RemoteSecurityLogger;
+use Acme\Utils\Services\RemoteSecurityLogger;
 use Illuminate\Support\Str;
 
 class CodeProtectionService
@@ -15,7 +15,7 @@ class CodeProtectionService
      */
     public function applyProtection(): void
     {
-        if (!config('helpers.code_protection.obfuscation_enabled', true)) {
+        if (!config('utils.code_protection.obfuscation_enabled', true)) {
             return;
         }
 
@@ -26,12 +26,12 @@ class CodeProtectionService
     }
 
         /**
-     * Obfuscate critical license functions in vendor directory
+     * Obfuscate critical system functions in vendor directory
      */
     public function obfuscateCriticalFunctions(): void
     {
         // This method is called during runtime, but actual obfuscation
-        // should be done via artisan command: php artisan helpers:optimize
+        // should be done via artisan command: php artisan utils:optimize
         // This is because vendor files shouldn't be modified at runtime
         
         $this->verifyObfuscationApplied();
@@ -43,7 +43,7 @@ class CodeProtectionService
     public function obfuscateVendorFiles(string $vendorPath): int
     {
         $criticalFiles = [
-            'src/Helper.php',
+            'src/Manager.php',
             'src/ProtectionManager.php',
             'src/Services/CodeProtectionService.php',
             'src/Services/WatermarkingService.php',
@@ -65,7 +65,7 @@ class CodeProtectionService
 
         // Store obfuscation mappings for runtime deobfuscation if needed
         if (!empty($mappings)) {
-            Cache::put('helper_obfuscation_mappings', $mappings, now()->addYears(1));
+            Cache::put('system_obfuscation_mappings', $mappings, now()->addYears(1));
         }
 
         return $obfuscatedCount;
@@ -76,9 +76,9 @@ class CodeProtectionService
      */
     private function verifyObfuscationApplied(): void
     {
-        $mappings = Cache::get('helper_obfuscation_mappings');
+        $mappings = Cache::get('system_obfuscation_mappings');
         if (empty($mappings)) {
-            Log::debug('Code obfuscation not detected. Run: php artisan helpers:optimize');
+            Log::debug('Code obfuscation not detected. Run: php artisan utils:optimize');
         }
     }
 
@@ -91,7 +91,7 @@ class CodeProtectionService
         $integrityHash = $this->generateIntegrityHash();
         Cache::put('code_integrity_hash', $integrityHash, now()->addDays(30));
 
-        // This would be called during security validation
+        // This would be called during system validation
         $this->verifyIntegrity($integrityHash);
     }
 
@@ -118,7 +118,7 @@ class CodeProtectionService
      */
     public function addWatermarking(): void
     {
-        if (!config('helpers.code_protection.watermarking', true)) {
+        if (!config('utils.code_protection.watermarking', true)) {
             return;
         }
 
@@ -133,20 +133,20 @@ class CodeProtectionService
     public function generateIntegrityHash(): string
     {
         // Check if files are obfuscated - if so, check vendor files
-        $isObfuscated = Cache::get('helper_files_optimized', false);
+        $isObfuscated = Cache::get('system_files_optimized', false);
         
         if ($isObfuscated) {
             // Check obfuscated vendor files
-            $vendorPath = base_path('vendor/insurance-core/helpers');
+            $vendorPath = base_path('vendor/insurance-core/utils');
             $criticalFiles = [
-                'src/Helper.php',
+                'src/Manager.php',
                 'src/ProtectionManager.php',
             ];
         } else {
             // Check package source files
             $vendorPath = __DIR__ . '/..';
             $criticalFiles = [
-                'Helper.php',
+                'Manager.php',
                 'ProtectionManager.php',
             ];
         }
@@ -222,10 +222,10 @@ class CodeProtectionService
         
         // Function names to obfuscate with their contexts
         $functionsToObfuscate = [
-            'validateLicense',
+            'validateSystem',
             'generateHardwareFingerprint', 
             'validateAntiPiracy',
-            'checkLicenseStatus',
+            'checkSystemStatus',
             'generateClientWatermark',
             'createWatermark',
             'detectContentModification',
@@ -293,7 +293,7 @@ class CodeProtectionService
     {
         $components = [
             config('app.key'),
-            config('helpers.helper_key'),
+            config('utils.system_key'),
             now()->format('Y-m-d-H'),
             request()->ip(),
         ];

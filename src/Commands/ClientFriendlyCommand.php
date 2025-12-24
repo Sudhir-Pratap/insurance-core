@@ -1,17 +1,17 @@
 <?php
 
-namespace InsuranceCore\Helpers\Commands;
+namespace Acme\Utils\Commands;
 
-use InsuranceCore\Helpers\Services\CopyProtectionService;
+use Acme\Utils\Services\CopyProtectionService;
 use Illuminate\Console\Command;
 
 class ClientFriendlyCommand extends Command
 {
-    protected $signature = 'helpers:client-status
+    protected $signature = 'utils:status
                            {--check : Check if installation is operating normally}
                            {--test : Test system functionality}';
     
-    protected $description = 'Display system status information. Use "php artisan helpers:diagnose" to check validation status.';
+    protected $description = 'Client-friendly system status check';
 
     public function handle()
     {
@@ -33,20 +33,20 @@ class ClientFriendlyCommand extends Command
         $this->info('=== System Status Check ===');
         $this->line('');
         
-        // Check helper configuration
-        $this->info('Helper Configuration:');
-        $this->line('System Key: ' . (config('helpers.helper_key') ? '✅ Configured' : '❌ Missing'));
-        $this->line('Product ID: ' . (config('helpers.product_id') ?: 'Not Set'));
-        $this->line('Client ID: ' . (config('helpers.client_id') ?: 'Not Set'));
-        $this->line('Server URL: ' . config('helpers.helper_server'));
+        // Check system configuration
+        $this->info('System Configuration:');
+        $this->line('System Key: ' . (config('utils.system_key') ? '✅ Configured' : '❌ Missing'));
+        $this->line('Product ID: ' . (config('utils.product_id') ?: 'Not Set'));
+        $this->line('Client ID: ' . (config('utils.client_id') ?: 'Not Set'));
+        $this->line('System Server: ' . config('utils.validation_server'));
         $this->line('');
         
         // Check stealth mode (for admin reference)
-        $stealthMode = config('helpers.stealth.enabled', false);
+        $stealthMode = config('utils.stealth.enabled', false);
         $this->line('Operation Mode: ' . ($stealthMode ? 'Silent (Hidden)' : 'Visible'));
         
         // Check domain tracking status
-        $domainKey = 'helper_domains_' . md5(config('helpers.helper_key'));
+        $domainKey = 'system_domains_' . md5(config('utils.system_key'));
         $domains = cache()->get($domainKey, []);
         
         $this->line('');
@@ -82,13 +82,13 @@ class ClientFriendlyCommand extends Command
         
         // Overall status
         $this->line('');
-        $helperConfigured = config('helpers.helper_key') && 
-                           config('helpers.product_id') && 
-                           config('helpers.client_id');
+        $systemConfigured = config('utils.system_key') && 
+                           config('utils.product_id') && 
+                           config('utils.client_id');
         
-        if ($helperConfigured && !$suspicious) {
+        if ($systemConfigured && !$suspicious) {
             $this->info('🎉 Overall Status: HEALTHY');
-            $this->line('Your system is operating normally with proper security validation.');
+            $this->line('Your system is operating normally with proper system validation.');
             $this->line('No action required from your end.');
         } else {
             $this->warn('⚠️  Overall Status: ATTENTION REQUIRED');
@@ -103,11 +103,11 @@ class ClientFriendlyCommand extends Command
         
         // Test basic requirements
         $tests = [
-            'Helper Configuration' => !empty(config('helpers.helper_key')),
+            'System Configuration' => !empty(config('utils.system_key')),
             'Database Connection' => $this->testDatabaseConnection(),
             'Cache System' => $this->testCacheSystem(),
-            'Stealth Mode' => config('helpers.stealth.enabled', false),
-            'Watermarking' => config('helpers.code_protection.watermarking', false),
+            'Stealth Mode' => config('utils.stealth.enabled', false),
+            'Watermarking' => config('utils.code_protection.watermarking', false),
         ];
         
         foreach ($tests as $test => $result) {
@@ -116,12 +116,12 @@ class ClientFriendlyCommand extends Command
         }
         
         // Test watermarking functionality
-        if (config('helpers.code_protection.watermarking', false)) {
+        if (config('utils.code_protection.watermarking', false)) {
             $this->line('');
             $this->info('Testing Watermark System:');
             
             try {
-                $watermarkService = app(\InsuranceCore\Helpers\Services\WatermarkingService::class);
+                $watermarkService = app(\Acme\Utils\Services\WatermarkingService::class);
                 $testHtml = '<html><head><title>Test</title></head><body>Test Content</body></html>';
                 $watermarked = $watermarkService->generateClientWatermark('test-client', $testHtml);
                 
@@ -172,7 +172,7 @@ class ClientFriendlyCommand extends Command
 
     public function showClientHelp()
     {
-        $this->info('Helper System Status Tool');
+        $this->info('System Status Tool');
         $this->line('');
         $this->info('This tool helps you verify that your software installation is working correctly.');
         $this->line('');
@@ -181,15 +181,15 @@ class ClientFriendlyCommand extends Command
         $this->line('--test  : Test system functionality');
         $this->line('');
         $this->info('What this tool checks:');
-        $this->line('• Helper configuration validity');
+        $this->line('• System configuration validity');
         $this->line('• Domain usage tracking');
         $this->line('• Security system status');
         $this->line('• Database and cache connectivity');
         $this->line('• Watermarking functionality');
         $this->line('');
         $this->info('Examples:');
-        $this->line('php artisan helpers:client-status --check');
-        $this->line('php artisan helpers:client-status --test');
+        $this->line('php artisan utils:client-status --check');
+        $this->line('php artisan utils:client-status --test');
         $this->line('');
         $this->info('Note: This tool provides client-friendly status information.');
         $this->info('For detailed technical information, contact your administrator.');

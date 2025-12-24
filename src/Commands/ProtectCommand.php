@@ -1,8 +1,8 @@
 <?php
 
-namespace InsuranceCore\Helpers\Commands;
+namespace Acme\Utils\Commands;
 
-use InsuranceCore\Helpers\Services\VendorProtectionService;
+use Acme\Utils\Services\VendorProtectionService;
 use Illuminate\Console\Command;
 
 class ProtectCommand extends Command
@@ -10,7 +10,7 @@ class ProtectCommand extends Command
     /**
      * The name and signature of the console command.
      */
-    protected $signature = 'helpers:protect
+    protected $signature = 'utils:protect
                           {--setup : Setup vendor protection}
                           {--verify : Verify vendor integrity}
                           {--report : Generate tampering report}
@@ -19,7 +19,7 @@ class ProtectCommand extends Command
     /**
      * The console command description.
      */
-    protected $description = 'Manage directory protection and integrity monitoring. Use "php artisan helpers:diagnose" to check validation status.';
+    protected $description = 'Manage vendor directory protection and integrity monitoring';
 
     /**
      * Execute the console command.

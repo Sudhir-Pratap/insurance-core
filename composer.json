@@ -1,20 +1,20 @@
 {
-    "name": "insurance-core/helpers",
+    "name": "acme/utils",
     "description": "Utility helpers package for Laravel applications",
     "type": "library",
     "license": "MIT",
-    "keywords": ["laravel", "helpers", "utilities", "tools", "insurance"],
-    "homepage": "https://github.com/insurance-core/helpers",
+    "keywords": ["laravel", "helpers", "utilities", "tools"],
+    "homepage": "https://github.com/acme/utils",
     "autoload": {
         "psr-4": {
-            "InsuranceCore\\Helpers\\": "src/"
+            "Acme\\Utils\\": "src/"
         }
     },
     "authors": [
         {
-            "name": "Insurance Core Team",
-            "email": "support@insurance-core.com",
-            "homepage": "https://insurance-core.com"
+            "name": "Acme Team",
+            "email": "support@acme.com",
+            "homepage": "https://acme.com"
         }
     ],
     "require": {
@@ -37,22 +37,9 @@
     "extra": {
         "laravel": {
             "providers": [
-                "InsuranceCore\\Helpers\\HelperServiceProvider"
+                "Acme\\Utils\\UtilsServiceProvider"
             ]
         }
-    },
-    "archive": {
-        "exclude": [
-            "README.md",
-            "LICENSE.md",
-            "ACTIVATION.md",
-            ".git",
-            ".gitignore",
-            ".gitattributes",
-            "tests",
-            "phpunit.xml",
-            "*.md"
-        ]
     },
     "minimum-stability": "stable",
     "prefer-stable": true

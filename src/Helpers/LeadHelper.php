@@ -1,6 +1,6 @@
 <?php
 
-namespace InsuranceCore\Helpers\Helpers;
+namespace Acme\Utils\Helpers;
 
 if (!function_exists('generateLeadID')) {
     /**

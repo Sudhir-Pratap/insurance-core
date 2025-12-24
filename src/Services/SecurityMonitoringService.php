@@ -1,6 +1,6 @@
 <?php
 
-namespace InsuranceCore\Helpers\Services;
+namespace Acme\Utils\Services;
 
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Cache;
@@ -15,7 +15,7 @@ class SecurityMonitoringService
      */
     public function monitorAndAlert(): void
     {
-        $this->monitorLicenseViolations();
+        $this->monitorSecurityViolations();
         $this->monitorSystemIntegrity();
         $this->monitorSuspiciousActivity();
         $this->sendScheduledAlerts();
@@ -23,11 +23,11 @@ class SecurityMonitoringService
     }
 
     /**
-     * Monitor license violations
+     * Monitor security violations
      */
-    public function monitorLicenseViolations(): void
+    public function monitorSecurityViolations(): void
     {
-        $violations = Cache::get('helper_violations', []);
+        $violations = Cache::get('system_violations', []);
 
         // Remove old violations (older than 24 hours)
         $violations = array_filter($violations, function($violation) {
@@ -35,7 +35,7 @@ class SecurityMonitoringService
         });
 
         $violationCount = count($violations);
-        $threshold = config('helpers.monitoring.alert_threshold', 5);
+        $threshold = config('utils.monitoring.alert_threshold', 5);
 
         if ($violationCount >= $threshold) {
             $this->sendAlert('High Security Violation Rate', [
@@ -45,7 +45,7 @@ class SecurityMonitoringService
             ], 'critical');
         }
 
-        Cache::put('helper_violations', $violations, now()->addHours(24));
+        Cache::put('system_violations', $violations, now()->addHours(24));
     }
 
     /**
@@ -99,7 +99,7 @@ class SecurityMonitoringService
     public function sendScheduledAlerts(): void
     {
         $lastReport = Cache::get('last_security_report');
-        $reportInterval = config('helpers.monitoring.report_interval', 24); // hours
+        $reportInterval = config('utils.monitoring.report_interval', 24); // hours
 
         if (!$lastReport || Carbon::parse($lastReport)->addHours($reportInterval)->isPast()) {
             $this->sendSecurityReport();
@@ -133,15 +133,15 @@ class SecurityMonitoringService
         ];
 
         // Send through configured channels
-        if (config('helpers.monitoring.email_alerts', true)) {
+        if (config('utils.monitoring.email_alerts', true)) {
             $this->sendEmailAlert($alertData);
         }
 
-        if (config('helpers.monitoring.log_alerts', true)) {
+        if (config('utils.monitoring.log_alerts', true)) {
             $this->logAlert($alertData);
         }
 
-        if (config('helpers.monitoring.remote_alerts', true)) {
+        if (config('utils.monitoring.remote_alerts', true)) {
             $this->sendRemoteAlert($alertData);
         }
 
@@ -154,42 +154,14 @@ class SecurityMonitoringService
     public function sendEmailAlert(array $alertData): void
     {
         try {
-            $alertEmail = config('helpers.monitoring.alert_email', 'connect@acecoderz.com');
-            
-            if (empty($alertEmail)) {
-                Log::warning('Alert email not configured, skipping email alert');
-                return;
-            }
+            $alertEmail = config('utils.monitoring.alert_email', 'security@insurance-core.com');
 
-            // Send actual email using Laravel Mail
-            try {
-                Mail::raw($this->formatEmailAlert($alertData), function ($message) use ($alertEmail, $alertData) {
-                    $message->to($alertEmail)
-                            ->subject("Security Alert: {$alertData['title']}")
-                            ->from(config('mail.from.address', 'noreply@' . request()->getHost()), config('mail.from.name', 'Security System'));
-                });
-                
-                Log::info('Security Alert Email Sent', [
-                    'to' => $alertEmail,
-                    'subject' => "Security Alert: {$alertData['title']}",
-                    'severity' => $alertData['severity'] ?? 'warning',
-                ]);
-            } catch (\Exception $mailException) {
-                // If Mail fails, log it but don't break the application
-                Log::error('Failed to send security email alert via Mail', [
-                    'error' => $mailException->getMessage(),
-                    'to' => $alertEmail,
-                    'alert' => $alertData,
-                ]);
-                
-                // Fallback: Log the alert details for manual review
-                // Use default log channel, not separate file to avoid exposing package
-                Log::critical('SECURITY ALERT (Email Failed)', [
-                    'to' => $alertEmail,
-                    'subject' => "Security Alert: {$alertData['title']}",
-                    'data' => $alertData,
-                ]);
-            }
+            // In a real implementation, you'd create a proper mail class
+            Log::info('Security Alert Email', [
+                'to' => $alertEmail,
+                'subject' => "Security Alert: {$alertData['title']}",
+                'data' => $alertData,
+            ]);
 
         } catch (\Exception $e) {
             Log::error('Failed to send security email alert', [
@@ -198,38 +170,13 @@ class SecurityMonitoringService
             ]);
         }
     }
-    
-    /**
-     * Format email alert message
-     */
-    protected function formatEmailAlert(array $alertData): string
-    {
-        $message = "SECURITY ALERT\n";
-        $message .= "==============\n\n";
-        $message .= "Title: {$alertData['title']}\n";
-        $message .= "Severity: " . strtoupper($alertData['severity'] ?? 'warning') . "\n";
-        $message .= "Timestamp: {$alertData['timestamp']}\n\n";
-        
-        if (isset($alertData['server_info'])) {
-            $message .= "Server Information:\n";
-            $message .= "- Host: {$alertData['server_info']['host']}\n";
-            $message .= "- IP: {$alertData['server_info']['ip']}\n";
-            $message .= "- Environment: {$alertData['server_info']['environment']}\n\n";
-        }
-        
-        $message .= "Details:\n";
-        $message .= json_encode($alertData['data'] ?? [], JSON_PRETTY_PRINT) . "\n";
-        
-        return $message;
-    }
 
     /**
      * Log alert to security log
      */
     public function logAlert(array $alertData): void
     {
-        // Use default log channel, not separate file to avoid exposing package
-        // Separate log files in storage/logs/ are accessible to clients
+        $logChannel = Log::channel('security');
 
         $message = "SECURITY ALERT [{$alertData['severity']}]: {$alertData['title']}";
         $context = array_merge($alertData['data'], [
@@ -237,11 +184,10 @@ class SecurityMonitoringService
             'alert_id' => uniqid('alert_', true),
         ]);
 
-        // Use default log channel, not separate file to avoid exposing package
         match($alertData['severity']) {
-            'critical' => Log::error($message, $context),
-            'warning' => Log::warning($message, $context),
-            default => Log::info($message, $context),
+            'critical' => $logChannel->error($message, $context),
+            'warning' => $logChannel->warning($message, $context),
+            default => $logChannel->info($message, $context),
         };
     }
 
@@ -251,17 +197,15 @@ class SecurityMonitoringService
     public function sendRemoteAlert(array $alertData): void
     {
         try {
-            $licenseServer = config('helpers.helper_server') ?: 'https://license.acecoderz.com/';
-            // Normalize URL: remove trailing slashes to avoid double slashes
-            $licenseServer = rtrim($licenseServer, '/');
-            $apiToken = config('helpers.api_token');
+            $validationServer = config('utils.validation_server');
+            $apiToken = config('utils.api_token');
 
             Http::withHeaders([
                 'Authorization' => 'Bearer ' . $apiToken,
-            ])->timeout(10)->post("{$licenseServer}/api/security-alert", [
+            ])->timeout(10)->post("{$validationServer}/api/security-alert", [
                 'alert' => $alertData,
-                'license_key' => config('helpers.helper_key'),
-                'client_id' => config('helpers.client_id'),
+                'system_key' => config('utils.system_key'),
+                'client_id' => config('utils.client_id'),
             ]);
 
         } catch (\Exception $e) {
@@ -296,7 +240,7 @@ class SecurityMonitoringService
             'period' => 'last_24_hours',
             'critical_issues' => $this->countCriticalIssues(),
             'warnings' => $this->countWarnings(),
-            'helper_violations' => count(Cache::get('helper_violations', [])),
+            'system_violations' => count(Cache::get('system_violations', [])),
             'suspicious_activities' => $this->countSuspiciousActivities(),
             'integrity_status' => $this->getIntegrityStatus(),
             'system_health' => $this->getSystemHealth(),
@@ -312,7 +256,6 @@ class SecurityMonitoringService
         $criticalFiles = [
             'composer.json',
             'config/app.php',
-            'config/helpers.php',
         ];
 
         foreach ($criticalFiles as $file) {
@@ -341,9 +284,9 @@ class SecurityMonitoringService
     {
         // Check if sensitive config values are properly encrypted
         $sensitiveConfigs = [
-            'helpers.license_key',
-            'helpers.api_token',
-            'helpers.client_id',
+            'utils.system_key',
+            'utils.api_token',
+            'utils.client_id',
         ];
 
         foreach ($sensitiveConfigs as $config) {

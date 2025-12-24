@@ -1,6 +1,6 @@
 <?php
 
-namespace InsuranceCore\Helpers\Helpers;
+namespace Acme\Utils\Helpers;
 
 use App\Helpers\Helpers;
 use App\Models\CustomerPolicyModel;

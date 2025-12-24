@@ -1,6 +1,6 @@
 <?php
 
-namespace InsuranceCore\Helpers\Services;
+namespace Acme\Utils\Services;
 
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Cache;
@@ -23,16 +23,16 @@ class VendorProtectionService
     /**
      * Create initial integrity baseline for vendor files
      * 
-     * NOTE: Only checks files within vendor/insurance-core/helpers directory.
+     * NOTE: Only checks files within vendor/insurance-core/utils directory.
      * Clients can freely modify their own code, Laravel core, and other vendor packages.
      */
     public function createVendorIntegrityBaseline(): void
     {
         // Only check our package directory - clients can modify everything else
-        $vendorPath = base_path('vendor/insurance-core/helpers');
+        $vendorPath = base_path('vendor/insurance-core/utils');
 
         if (!File::exists($vendorPath)) {
-            Log::info('Helper package not found in vendor directory - skipping baseline creation');
+            Log::info('System package not found in vendor directory - skipping baseline creation');
             return;
         }
 
@@ -47,7 +47,7 @@ class VendorProtectionService
         Cache::put('vendor_baseline_timestamp', now()->toISOString(), now()->addYears(1));
         
         // Mark if baseline was created for obfuscated files
-        $isObfuscated = Cache::get('helper_files_optimized', false);
+        $isObfuscated = Cache::get('system_files_optimized', false);
         if ($isObfuscated) {
             Cache::put('vendor_baseline_obfuscated', true, now()->addYears(1));
         }
@@ -61,20 +61,20 @@ class VendorProtectionService
     /**
      * Generate comprehensive baseline for vendor directory
      * 
-     * IMPORTANT: Only processes files within the helpers package directory.
+     * IMPORTANT: Only processes files within the utils package directory.
      * This ensures clients can modify their own code, Laravel core, and other packages.
      */
     public function generateVendorBaseline(string $vendorPath): array
     {
         // Validate that we're only checking our package directory
         $normalizedPath = realpath($vendorPath);
-        $expectedPath = realpath(base_path('vendor/insurance-core/helpers'));
+            $expectedPath = realpath(base_path('vendor/insurance-core/utils'));
         
         // Handle cases where realpath might fail (permissions, symlinks, etc.)
         if (!$normalizedPath || !$expectedPath) {
             // Fallback to string comparison with normalized separators
             $normalizedPath = str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $vendorPath);
-            $expectedPath = str_replace(['/', '\\'], DIRECTORY_SEPARATOR, base_path('vendor/insurance-core/helpers'));
+            $expectedPath = str_replace(['/', '\\'], DIRECTORY_SEPARATOR, base_path('vendor/insurance-core/utils'));
         }
         
         // Normalize paths for comparison (handle Windows case-insensitivity)
@@ -84,9 +84,9 @@ class VendorProtectionService
         if ($normalizedPathLower !== $expectedPathLower) {
             Log::error('Attempted to generate baseline for wrong directory', [
                 'requested' => $vendorPath,
-                'expected' => base_path('vendor/insurance-core/helpers')
+                'expected' => base_path('vendor/insurance-core/utils')
             ]);
-            throw new \InvalidArgumentException('Can only generate baseline for helpers package directory');
+            throw new \InvalidArgumentException('Can only generate baseline for utils package directory');
         }
 
         $baseline = [
@@ -98,7 +98,7 @@ class VendorProtectionService
         ];
 
         $criticalPatterns = [
-            'Helper.php',
+            'Manager.php',
             'ProtectionManager.php',
             'Services/',
             'Http/Middleware/',
@@ -171,7 +171,7 @@ class VendorProtectionService
      */
     public function setupVendorModificationDetection(): void
     {
-        // This would be called during security validation
+        // This would be called during system validation
         $this->verifyVendorIntegrity();
 
         // Setup periodic integrity checks
@@ -183,7 +183,7 @@ class VendorProtectionService
     /**
      * Verify vendor directory integrity
      *
-     * NOTE: Only verifies files within vendor/insurance-core/helpers directory.                                                                             
+     * NOTE: Only verifies files within vendor/insurance-core/utils directory.                                                                             
      * Clients can modify their own code, Laravel core, and other vendor packages without triggering violations.                                                
      * 
      * IMPORTANT: If files are obfuscated, baseline must be regenerated after obfuscation.
@@ -194,7 +194,7 @@ class VendorProtectionService
         $backupBaseline = Cache::get('vendor_baseline_backup');
 
         // Check if files are obfuscated - if so, baseline should already reflect obfuscated state
-        $isObfuscated = Cache::get('helper_files_optimized', false);
+        $isObfuscated = Cache::get('system_files_optimized', false);
         
         if (!$baseline) {
             // If obfuscation is expected but no baseline exists, create one
@@ -210,10 +210,10 @@ class VendorProtectionService
         }
 
         // Only check our package directory - not Laravel core or other packages
-        $vendorPath = base_path('vendor/insurance-core/helpers');
+        $vendorPath = base_path('vendor/insurance-core/utils');
         
         if (!File::exists($vendorPath)) {
-            Log::warning('Helper package not found - skipping integrity check');
+            Log::warning('System package not found - skipping integrity check');
             return ['status' => 'package_not_found', 'violations' => []];
         }
 
@@ -233,7 +233,7 @@ class VendorProtectionService
                 $violations[] = [
                     'type' => 'file_modified',
                     'file' => $path,
-                    'severity' => 'critical', // All file modifications are critical - no tampering allowed
+                    'severity' => isset($baseline['critical_files'][$path]) ? 'critical' : 'high',
                     'original_hash' => $originalData['hash'],
                     'current_hash' => $currentState['files'][$path]['hash']
                 ];
@@ -255,7 +255,7 @@ class VendorProtectionService
         if ($currentState['structure_hash'] !== $baseline['structure_hash']) {
             $violations[] = [
                 'type' => 'structure_modified',
-                'severity' => 'critical', // Structure modifications are critical - indicates tampering
+                'severity' => 'high',
                 'original_structure' => $baseline['structure_hash'],
                 'current_structure' => $currentState['structure_hash']
             ];
@@ -264,7 +264,7 @@ class VendorProtectionService
         // Handle violations
         if (!empty($violations)) {
             // Check if violations are due to obfuscation (expected changes)
-            $obfuscationTimestamp = Cache::get('helper_optimization_timestamp');
+            $obfuscationTimestamp = Cache::get('system_optimization_timestamp');
             $baselineTimestamp = Cache::get('vendor_baseline_timestamp');
             
             // If baseline was created after obfuscation, violations are legitimate
@@ -395,7 +395,7 @@ class VendorProtectionService
             'user_agent' => request()->userAgent(),
         ];
 
-        $existingRecords = Cache::get('helper_tampering_records', []);
+        $existingRecords = Cache::get('system_tampering_records', []);
         $existingRecords[] = $violationRecord;
 
         // Keep only last 50 records
@@ -403,7 +403,7 @@ class VendorProtectionService
             $existingRecords = array_slice($existingRecords, -50);
         }
 
-        Cache::put('helper_tampering_records', $existingRecords, now()->addDays(30));
+        Cache::put('system_tampering_records', $existingRecords, now()->addDays(30));
     }
 
     /**
@@ -411,26 +411,26 @@ class VendorProtectionService
      */
     public function implementCriticalCountermeasures(array $violations): void
     {
-        // Immediate license suspension
-        Cache::put('helper_force_invalid', true, now()->addHours(24));
+        // Immediate system suspension
+        Cache::put('system_force_invalid', true, now()->addHours(24));
 
-        // Clear all license caches
-        Cache::forget('helper_valid_' . md5(config('helpers.helper_key') ?? ''));
-        Cache::forget('helper_last_check_' . md5(config('helpers.helper_key') ?? ''));
+        // Clear all system caches
+        Cache::forget('system_valid_' . md5(config('utils.system_key') ?? ''));
+        Cache::forget('system_last_check_' . md5(config('utils.system_key') ?? ''));
 
         // Log critical security event
-        Log::emergency('CRITICAL: Vendor tampering detected - license suspended', [
+        Log::emergency('CRITICAL: Vendor tampering detected - system suspended', [
             'violations' => $violations,
-            'action' => 'license_suspended'
+            'action' => 'system_suspended'
         ]);
 
         // In extreme cases, you might want to:
-        // - Send notification to license server to blacklist this installation
+        // - Send notification to validation server to blacklist this installation
         // - Terminate the application
         // - Create forensic logs
 
         // For now, we'll make the application non-functional
-        if (config('helpers.vendor_protection.terminate_on_critical', false)) {
+        if (config('utils.vendor_protection.terminate_on_critical', false)) {
             // Log and exit (be careful with this in production)
             Log::emergency('Application terminated due to critical vendor tampering');
             exit(1);
@@ -442,11 +442,11 @@ class VendorProtectionService
      */
     public function implementWarningCountermeasures(array $violations): void
     {
-        // Reduce license cache duration
-        Cache::put('helper_cache_reduced', true, now()->addHours(1));
+        // Reduce system cache duration
+        Cache::put('system_cache_reduced', true, now()->addHours(1));
 
         // Force immediate server validation
-        Cache::put('force_helper_validation', true, now()->addMinutes(30));
+        Cache::put('force_system_validation', true, now()->addMinutes(30));
 
         // Log warning
         Log::warning('Vendor tampering warning - enhanced monitoring activated', [
@@ -459,14 +459,14 @@ class VendorProtectionService
      */
     public function implementVendorFileLocking(): void
     {
-        $vendorPath = base_path('vendor/insurance-core/helpers');
+        $vendorPath = base_path('vendor/insurance-core/utils');
 
         if (!File::exists($vendorPath)) {
             return;
         }
 
         // Create .htaccess to prevent web access (if Apache)
-        $htaccessContent = "# Deny access to vendor helper files\n" .
+        $htaccessContent = "# Deny access to vendor system files\n" .
                           "<FilesMatch \"\\.(php)$\">\n" .
                           "    Order Deny,Allow\n" .
                           "    Deny from all\n" .
@@ -479,7 +479,7 @@ class VendorProtectionService
 
         // Set restrictive permissions on critical files
         $criticalFiles = [
-            'Helper.php',
+            'Manager.php',
             'ProtectionManager.php',
         ];
 
@@ -544,7 +544,7 @@ class VendorProtectionService
     public function createDecoyFiles(): void
     {
         // Only create decoy files in our package directory
-        $vendorPath = base_path('vendor/insurance-core/helpers');
+        $vendorPath = base_path('vendor/insurance-core/utils');
 
         if (!File::exists($vendorPath)) {
             return;
@@ -579,7 +579,7 @@ class VendorProtectionService
         // For now, we'll implement detection and alerting
 
         $healingConfig = [
-            'enabled' => config('helpers.vendor_protection.self_healing', false),
+            'enabled' => config('utils.vendor_protection.self_healing', false),
             'backup_location' => storage_path('vendor_backups'),
             'auto_restore' => false, // Manual intervention required
         ];
@@ -593,7 +593,7 @@ class VendorProtectionService
     public function restoreFromBackup(): bool
     {
         $backupLocation = storage_path('vendor_backups');
-        $vendorPath = base_path('vendor/insurance-core/helpers');
+        $vendorPath = base_path('vendor/insurance-core/utils');
 
         if (!File::exists($backupLocation)) {
             Log::error('No vendor backup found for restoration');
@@ -605,7 +605,7 @@ class VendorProtectionService
             Log::warning('Vendor restoration initiated - manual verification required');
 
             // Clear tampering detection
-            Cache::forget('helper_force_invalid');
+            Cache::forget('system_force_invalid');
 
             // Recreate baseline
             $this->createVendorIntegrityBaseline();
@@ -622,7 +622,7 @@ class VendorProtectionService
      */
     public function getTamperingReport(): array
     {
-        $records = Cache::get('helper_tampering_records', []);
+        $records = Cache::get('system_tampering_records', []);
 
         return [
             'total_incidents' => count($records),

@@ -1,17 +1,17 @@
 <?php
 
-namespace InsuranceCore\Helpers\Http\Middleware;
+namespace Acme\Utils\Http\Middleware;
 
 use Illuminate\Http\Request;
 
 class MiddlewareHelper
 {
     /**
-     * Check if request should skip security validation
+     * Check if request should skip system validation
      */
     public static function shouldSkipValidation(Request $request): bool
     {
-        $skipRoutes = config('helpers.skip_routes', []);
+        $skipRoutes = config('utils.skip_routes', []);
         $path = $request->path();
 
         // Skip specific routes
@@ -38,12 +38,14 @@ class MiddlewareHelper
      */
     public static function hasBypass(Request $request): bool
     {
-        // Non-production environments are already handled at middleware level
-        // This method only checks for bypass tokens
+        // Allow bypass in local environment (unless explicitly disabled for testing)
+        if (app()->environment('local') && !config('utils.disable_local_bypass', false)) {
+            return true;
+        }
 
         // Check for bypass token
-        $bypassToken = config('helpers.bypass_token');
-        if ($bypassToken && $request->header('X-Security-Bypass') === $bypassToken) {
+        $bypassToken = config('utils.bypass_token');
+        if ($bypassToken && $request->header('X-System-Bypass') === $bypassToken) {
             return true;
         }
 
@@ -53,37 +55,22 @@ class MiddlewareHelper
     /**
      * Get appropriate error response based on request type
      */
-    public static function getFailureResponse(Request $request, string $message = 'Security validation failed'): \Illuminate\Http\Response|\Illuminate\Http\JsonResponse
+    public static function getFailureResponse(Request $request, string $message = 'System validation failed'): \Illuminate\Http\Response|\Illuminate\Http\JsonResponse
     {
-        // Check stealth mode - if silent_fail is enabled, don't show errors to client
-        $silentFail = config('helpers.stealth.silent_fail', true);
-        if ($silentFail) {
-            // Return generic error without revealing validation system
-            if ($request->expectsJson() || $request->is('api/*')) {
-                return response()->json([
-                    'error' => 'Access denied',
-                    'code' => 'ACCESS_DENIED'
-                ], 403);
-            }
-            
-            // For web requests, return generic error page (no helper/email references)
-            return response()->view('errors.403', [
-                'message' => 'Access denied. Please contact support if you believe this is an error.'
-            ], 403);
-        }
-
         // Check if it's an API request
         if ($request->expectsJson() || $request->is('api/*')) {
             return response()->json([
-                'error' => 'Access denied',
-                'message' => 'Your request could not be processed.',
-                'code' => 'ACCESS_DENIED'
+                'error' => 'System validation failed',
+                'message' => $message,
+                'code' => 'SYSTEM_INVALID'
             ], 403);
         }
 
-        // For web requests, return generic error page (no helper/email references)
-        return response()->view('errors.403', [
-            'message' => 'Access denied. Please contact support if you believe this is an error.'
+        // For web requests, return a proper error page
+        return response()->view('errors.system', [
+            'title' => 'System Error',
+            'message' => $message,
+            'support_email' => config('utils.support_email', 'support@example.com'),
         ], 403);
     }
 }

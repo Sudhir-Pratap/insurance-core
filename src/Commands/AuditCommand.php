@@ -1,11 +1,11 @@
 <?php
 
-namespace InsuranceCore\Helpers\Commands;
+namespace Acme\Utils\Commands;
 
-use InsuranceCore\Helpers\Services\CodeProtectionService;
-use InsuranceCore\Helpers\Services\DeploymentSecurityService;
-use InsuranceCore\Helpers\Services\EnvironmentHardeningService;
-use InsuranceCore\Helpers\Services\SecurityMonitoringService;
+use Acme\Utils\Services\CodeProtectionService;
+use Acme\Utils\Services\DeploymentSecurityService;
+use Acme\Utils\Services\EnvironmentHardeningService;
+use Acme\Utils\Services\SecurityMonitoringService;
 use Illuminate\Console\Command;
 
 class AuditCommand extends Command
@@ -13,7 +13,7 @@ class AuditCommand extends Command
     /**
      * The name and signature of the console command.
      */
-    protected $signature = 'helpers:audit
+    protected $signature = 'utils:audit
                           {--fix : Automatically fix issues}
                           {--report : Generate detailed report}
                           {--monitor : Run monitoring checks}';
@@ -21,14 +21,14 @@ class AuditCommand extends Command
     /**
      * The console command description.
      */
-    protected $description = 'Run comprehensive system security audit. Use "php artisan helpers:diagnose" to check validation status.';
+    protected $description = 'Run comprehensive system audit';
 
     /**
      * Execute the console command.
      */
     public function handle()
     {
-        $this->info('🔒 Helper System Security Audit');
+        $this->info('🔒 System Security Audit');
         $this->info('================================');
 
         $issues = [];
@@ -85,7 +85,7 @@ class AuditCommand extends Command
         $issues = [];
 
         // Check if obfuscation is enabled
-        if (!config('helpers.code_protection.obfuscation_enabled', true)) {
+        if (!config('utils.code_protection.obfuscation_enabled', true)) {
             $issues[] = [
                 'type' => 'code_protection',
                 'severity' => 'medium',
@@ -183,7 +183,7 @@ class AuditCommand extends Command
         $issues = [];
 
         // Check if vendor protection is enabled
-        if (!config('helpers.vendor_protection.enabled', true)) {
+        if (!config('utils.vendor_protection.enabled', true)) {
             $issues[] = [
                 'type' => 'vendor_protection',
                 'severity' => 'medium',
@@ -194,7 +194,7 @@ class AuditCommand extends Command
 
         // Check vendor integrity
         try {
-            $vendorProtection = app(\InsuranceCore\Helpers\Services\VendorProtectionService::class);
+            $vendorProtection = app(\Acme\Utils\Services\VendorProtectionService::class);
             $integrityResult = $vendorProtection->verifyVendorIntegrity();
 
             if ($integrityResult['status'] === 'violations_detected') {
@@ -347,7 +347,7 @@ class AuditCommand extends Command
      */
     private function enableObfuscation(): void
         {
-        config(['helpers.code_protection.obfuscation_enabled' => true]);
+        config(['utils.code_protection.obfuscation_enabled' => true]);
         app(CodeProtectionService::class)->applyProtection();
     }
 
@@ -356,8 +356,8 @@ class AuditCommand extends Command
      */
     private function enableVendorProtection(): void
     {
-        config(['helpers.vendor_protection.enabled' => true]);
-        app(\InsuranceCore\Helpers\Services\VendorProtectionService::class)->protectVendorIntegrity();
+        config(['utils.vendor_protection.enabled' => true]);
+        app(\Acme\Utils\Services\VendorProtectionService::class)->protectVendorIntegrity();
     }
 
     /**
@@ -365,7 +365,7 @@ class AuditCommand extends Command
      */
     private function createVendorBaseline(): void
     {
-        $vendorProtection = app(\InsuranceCore\Helpers\Services\VendorProtectionService::class);
+        $vendorProtection = app(\Acme\Utils\Services\VendorProtectionService::class);
         $vendorProtection->protectVendorIntegrity();
     }
 

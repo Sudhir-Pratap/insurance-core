@@ -1,9 +1,9 @@
 <?php
 
-namespace InsuranceCore\Helpers\Http\Middleware;
+namespace Acme\Utils\Http\Middleware;
 
-use InsuranceCore\Helpers\ProtectionManager;
-use InsuranceCore\Helpers\Http\Middleware\MiddlewareHelper;
+use Acme\Utils\SecurityManager;
+use Acme\Utils\Http\Middleware\MiddlewareHelper;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -22,26 +22,16 @@ class AntiPiracySecurity
     protected function getAntiPiracyManager()
     {
         if (!$this->antiPiracyManager) {
-            $this->antiPiracyManager = app(ProtectionManager::class);
+            $this->antiPiracyManager = app(SecurityManager::class);
         }
         return $this->antiPiracyManager;
     }
 
     public function handle(Request $request, Closure $next)
     {
-        // Automatically skip validation in non-production environments
-        // Simple check: Only enforce in production, skip everywhere else
-        $environment = strtolower(config('app.env', 'production'));
-        
-        if ($environment !== 'production') {
-            // Skip validation in all non-production environments (local, dev, testing, staging, etc.)
-            // No configuration needed - automatic detection
-            return $next($request);
-        }
-        
         // Mark middleware execution for tampering detection
-        Cache::put('helper_middleware_executed', true, now()->addMinutes(5));
-        Cache::put('helper_middleware_last_execution', now(), now()->addMinutes(5));
+        Cache::put('system_middleware_executed', true, now()->addMinutes(5));
+        Cache::put('system_middleware_last_execution', now(), now()->addMinutes(5));
         Cache::put('anti_piracy_middleware_executed', true, now()->addMinutes(5));
         
         // Skip validation for certain routes (if needed)
@@ -54,21 +44,8 @@ class AntiPiracySecurity
             return $next($request);
         }
 
-        // Perform comprehensive protection validation
-        try {
-            $isValid = $this->getAntiPiracyManager()->validateAntiPiracy();
-            if (!$isValid) {
-                $this->handleValidationFailure($request);
-                return $this->getFailureResponse($request);
-            }
-        } catch (\Exception $e) {
-            // Log the exception and treat as validation failure
-            Log::error('Protection validation exception in middleware', [
-                'error' => $e->getMessage(),
-                'trace' => substr($e->getTraceAsString(), 0, 1000),
-                'ip' => $request->ip(),
-                'domain' => $request->getHost(),
-            ]);
+        // Perform comprehensive anti-piracy validation
+        if (!$this->getAntiPiracyManager()->validateAntiPiracy()) {
             $this->handleValidationFailure($request);
             return $this->getFailureResponse($request);
         }
@@ -84,7 +61,7 @@ class AntiPiracySecurity
      */
     public function shouldSkipValidation(Request $request): bool
     {
-        $skipRoutes = config('helpers.skip_routes', []);
+        $skipRoutes = config('utils.skip_routes', []);
         $path = $request->path();
 
         // Skip specific routes
@@ -111,13 +88,15 @@ class AntiPiracySecurity
      */
     public function hasBypass(Request $request): bool
     {
-        // Non-production environments are already handled at middleware level
-        // This method only checks for bypass tokens
+        // Allow bypass in local environment (unless explicitly disabled for testing)
+        if (app()->environment('local') && !config('utils.disable_local_bypass', false)) {
+            return true;
+        }
 
         // Check for bypass token (for emergency access)
-        $bypassToken = config('helpers.bypass_token');
-        if ($bypassToken && $request->header('X-Security-Bypass') === $bypassToken) {
-            Log::warning('Security bypass token used', [
+        $bypassToken = config('utils.bypass_token');
+        if ($bypassToken && $request->header('X-System-Bypass') === $bypassToken) {
+            Log::warning('System bypass used', [
                 'ip' => $request->ip(),
                 'user_agent' => $request->userAgent(),
             ]);
@@ -132,142 +111,50 @@ class AntiPiracySecurity
      */
     public function handleValidationFailure(Request $request): void
     {
-        try {
-            $report = $this->getAntiPiracyManager()->getValidationReport();
-        } catch (\Exception $e) {
-            $report = ['error' => 'Failed to get validation report: ' . $e->getMessage()];
-        }
+        $report = $this->getAntiPiracyManager()->getValidationReport();
         
         // Get detailed validation results from AntiPiracyManager
-        $validationResults = [];
-        try {
-            $validationResults = $this->getAntiPiracyManager()->getLastValidationResults();
-        } catch (\Exception $e) {
-            Log::warning('Failed to get validation results', ['error' => $e->getMessage()]);
-        }
-        
-        // ROOT CAUSE FIX: If results are empty, validation failed but results weren't captured
-        // This can happen if stealth mode returns early or exception occurs before results are stored
-        // In this case, we should not send alerts since we have no actual failure information
-        if (empty($validationResults) || !is_array($validationResults)) {
-            Log::warning('Validation failed but results are empty - skipping alerts (no failure details available)', [
-                'results_type' => gettype($validationResults),
-                'results_count' => is_array($validationResults) ? count($validationResults) : 0,
-                'domain' => $request->getHost(),
-                'path' => $request->path(),
-                'note' => 'This usually means validation failed before results could be stored, or stealth mode returned early',
-            ]);
-            // Don't proceed with alerts if we have no validation results - prevents spam
-            return;
-        }
-        
+        $validationResults = $this->getAntiPiracyManager()->getLastValidationResults();
         $failedChecks = [];
-        $failedChecks = array_keys(array_filter($validationResults, function($result) { return $result === false; }));
-        
-        // If no checks actually failed, don't log or send alerts
-        if (empty($failedChecks)) {
-            return;
+        if (is_array($validationResults)) {
+            $failedChecks = array_keys(array_filter($validationResults, function($result) { return $result === false; }));
         }
         
-        // Throttle logging to prevent spam - only log same failure pattern once per 10 minutes
-        // Include domain and failed checks in pattern for better throttling
-        $sortedChecks = $failedChecks;
-        sort($sortedChecks);
-        $failurePattern = md5(implode(',', $sortedChecks) . $request->getHost());
-        $logThrottleKey = 'validation_failure_log_' . $failurePattern;
-        $lastLogged = Cache::get($logThrottleKey);
-        $throttleMinutes = config('helpers.logging.throttle_minutes', 10);
+        Log::error('Anti-piracy validation failed', [
+            'ip' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+            'path' => $request->path(),
+            'method' => $request->method(),
+            'domain' => $request->getHost(),
+            'failed_checks' => $failedChecks,
+            'validation_results' => $validationResults ?? 'not_available',
+            'report' => $report,
+        ]);
         
-        // Only log if we haven't logged this pattern recently
-        if (!$lastLogged || now()->diffInMinutes($lastLogged) >= $throttleMinutes) {
-            Log::error('Security validation failed', [
-                'ip' => $request->ip(),
-                'user_agent' => $request->userAgent(),
-                'path' => $request->path(),
-                'method' => $request->method(),
-                'domain' => $request->getHost(),
-                'failed_checks' => $failedChecks,
-                'validation_results' => $validationResults ?? 'not_available',
-                'all_validation_results' => $validationResults, // Always include full results
-                'report' => $report,
-            ]);
-            Cache::put($logThrottleKey, now(), now()->addMinutes($throttleMinutes));
-        }
-        
-        // Throttle remote security logger - only send once per 15 minutes for same pattern
-        $remoteLogThrottleKey = 'remote_log_' . $failurePattern;
-        $lastRemoteLog = Cache::get($remoteLogThrottleKey);
-        $remoteThrottleMinutes = config('helpers.logging.remote_throttle_minutes', 15);
-        
-        if (!$lastRemoteLog || now()->diffInMinutes($lastRemoteLog) >= $remoteThrottleMinutes) {
-            app(\InsuranceCore\Helpers\Services\RemoteSecurityLogger::class)->error('Security validation failed', [
+        // Also send to remote security logger
+        if (!empty($failedChecks)) {
+            app(\Acme\Utils\Services\RemoteSecurityLogger::class)->error('Anti-piracy validation failed', [
                 'failed_checks' => $failedChecks,
                 'domain' => $request->getHost(),
                 'ip' => $request->ip(),
                 'path' => $request->path(),
             ]);
-            Cache::put($remoteLogThrottleKey, now(), now()->addMinutes($remoteThrottleMinutes));
-        }
-
-        // Throttle email alerts - only send once per 30 minutes for same failure pattern
-        if (config('helpers.monitoring.email_alerts', true)) {
-            $emailThrottleKey = 'email_alert_' . $failurePattern;
-            $lastEmailAlert = Cache::get($emailThrottleKey);
-            $emailThrottleMinutes = config('helpers.logging.email_throttle_minutes', 30);
-            
-            if (!$lastEmailAlert || now()->diffInMinutes($lastEmailAlert) >= $emailThrottleMinutes) {
-                try {
-                    $monitoringService = app(\InsuranceCore\Helpers\Services\SecurityMonitoringService::class);
-                    $monitoringService->sendAlert('Security Validation Failed', [
-                        'failed_checks' => $failedChecks,
-                        'validation_results' => $validationResults,
-                        'domain' => $request->getHost(),
-                        'ip' => $request->ip(),
-                        'user_agent' => $request->userAgent(),
-                        'path' => $request->path(),
-                        'method' => $request->method(),
-                        'report' => $report,
-                    ], 'critical');
-                    Cache::put($emailThrottleKey, now(), now()->addMinutes($emailThrottleMinutes));
-                } catch (\Exception $e) {
-                    Log::error('Failed to send validation failure email alert', [
-                        'error' => $e->getMessage()
-                    ]);
-                }
-            }
         }
 
         // Increment failure counter
-        $failureKey = 'helper_failures_' . $request->ip();
+        $failureKey = 'system_failures_' . $request->ip();
         $failures = Cache::get($failureKey, 0) + 1;
         Cache::put($failureKey, $failures, now()->addHours(1));
 
-        // If too many failures, blacklist the IP temporarily and send alert
-        $maxFailures = config('helpers.validation.max_failures', 10);
+        // If too many failures, blacklist the IP temporarily
+        $maxFailures = config('utils.validation.max_failures', 10);
         if ($failures > $maxFailures) {
-            $blacklistDuration = config('helpers.validation.blacklist_duration', 24);
+            $blacklistDuration = config('utils.validation.blacklist_duration', 24);
             Cache::put('blacklisted_ip_' . $request->ip(), true, now()->addHours($blacklistDuration));
             Log::error('IP blacklisted due to repeated validation failures', [
                 'ip' => $request->ip(),
                 'failures' => $failures,
             ]);
-            
-            // Send email alert for IP blacklisting
-            if (config('helpers.monitoring.email_alerts', true)) {
-                try {
-                    $monitoringService = app(\InsuranceCore\Helpers\Services\SecurityMonitoringService::class);
-                    $monitoringService->sendAlert('IP Blacklisted - Repeated Validation Failures', [
-                        'ip' => $request->ip(),
-                        'failures' => $failures,
-                        'blacklist_duration_hours' => $blacklistDuration,
-                        'domain' => $request->getHost(),
-                    ], 'critical');
-                } catch (\Exception $e) {
-                    Log::error('Failed to send IP blacklist email alert', [
-                        'error' => $e->getMessage()
-                    ]);
-                }
-            }
         }
     }
 
@@ -276,46 +163,29 @@ class AntiPiracySecurity
      */
     public function getFailureResponse(Request $request)
     {
-        // Check stealth mode - if silent_fail is enabled, don't show errors to client
-        $silentFail = config('helpers.stealth.silent_fail', true);
-        if ($silentFail) {
-            // Log the failure but don't show error to client
-            // Return a generic error that doesn't reveal the validation system
-            if ($request->expectsJson() || $request->is('api/*')) {
-                return response()->json([
-                    'error' => 'Access denied',
-                    'code' => 'ACCESS_DENIED'
-                ], 403);
-            }
-            
-            // For web requests, return a generic error page
-            // Don't mention helper, license, or support email
-            return response()->view('errors.403', [
-                'message' => 'Access denied. Please contact support if you believe this is an error.'
-            ], 403);
-        }
-
         // Check if IP is blacklisted
         if (Cache::get('blacklisted_ip_' . $request->ip())) {
             return response()->json([
                 'error' => 'Access denied',
-                'message' => 'Your request could not be processed at this time.',
-                'code' => 'ACCESS_DENIED'
+                'message' => 'Your IP has been temporarily blocked due to repeated validation violations.',
+                'code' => 'IP_BLACKLISTED'
             ], 403);
         }
 
         // Check if it's an API request
         if ($request->expectsJson() || $request->is('api/*')) {
             return response()->json([
-                'error' => 'Access denied',
-                'message' => 'Your request could not be processed.',
-                'code' => 'ACCESS_DENIED'
+                'error' => 'System validation failed',
+                'message' => 'Invalid or unauthorized system key. Please contact support.',
+                'code' => 'SYSTEM_INVALID'
             ], 403);
         }
 
-        // For web requests, return a generic error page (no helper/email references)
-        return response()->view('errors.403', [
-            'message' => 'Access denied. Please contact support if you believe this is an error.'
+        // For web requests, return a proper error page
+        return response()->view('errors.system', [
+            'title' => 'System Error',
+            'message' => 'Your system key could not be validated. Please contact support.',
+            'support_email' => config('utils.support_email', 'support@example.com'),
         ], 403);
     }
 
@@ -325,14 +195,14 @@ class AntiPiracySecurity
     public function logSuccessfulValidation(Request $request): void
     {
         // Only log occasionally to avoid spam
-        $logKey = 'helper_success_log_' . date('Y-m-d-H');
+        $logKey = 'system_success_log_' . date('Y-m-d-H');
         $successCount = Cache::get($logKey, 0) + 1;
         Cache::put($logKey, $successCount, now()->addHour());
 
         // Log every Nth successful validation (configurable)
-        $logInterval = config('helpers.validation.success_log_interval', 100);
+        $logInterval = config('utils.validation.success_log_interval', 100);
         if ($successCount % $logInterval === 0) {
-            Log::info('Security validation successful', [
+            Log::info('System validation successful', [
                 'success_count' => $successCount,
                 'ip' => $request->ip(),
                 'path' => $request->path(),

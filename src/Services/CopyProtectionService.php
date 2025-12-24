@@ -1,6 +1,6 @@
 <?php
 
-namespace InsuranceCore\Helpers\Services;
+namespace Acme\Utils\Services;
 
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Cache;
@@ -11,46 +11,35 @@ class CopyProtectionService
 {
     /**
      * Detect potential reselling activity
-     * CRITICAL: This is one of the main security features - always enabled
      */
     public function detectResellingBehavior(array $context = []): bool
     {
-        // Skip if anti-reselling is disabled (not recommended)
-        if (!config('helpers.anti_reselling.enabled', true)) {
-            return false;
-        }
-        
         $suspiciousIndicators = [
-            'multiple_domains' => $this->checkMultipleDomainUsage(), // PRIMARY: Multiple domains = reselling
-            'usage_patterns' => $this->analyzeUsagePatterns(), // PRIMARY: Different usage patterns = different clients
-            'deployment_patterns' => $this->analyzeDeploymentPatterns(), // Hardware changes = new installation
-            'code_modifications' => $this->detectCodeModifications(), // Code changes = trying to bypass
-            'network_behavior' => $this->analyzeNetworkBehavior(), // Network patterns
-            'installation_clustering' => $this->checkInstallationClustering(), // Multiple installations in same area
+            'multiple_domains' => $this->checkMultipleDomainUsage(),
+            'usage_patterns' => $this->analyzeUsagePatterns(),
+            'deployment_patterns' => $this->analyzeDeploymentPatterns(),
+            'code_modifications' => $this->detectCodeModifications(),
+            'network_behavior' => $this->analyzeNetworkBehavior(),
+            'installation_clustering' => $this->checkInstallationClustering(),
         ];
 
         $score = $this->calculateSuspiciousScore($suspiciousIndicators);
-        $threshold = config('helpers.anti_reselling.threshold_score', 75);
+        $threshold = config('utils.anti_reselling.threshold_score', 75);
 
         if ($score >= $threshold) {
-            Log::warning('Reselling activity detected', [
-                'score' => $score,
-                'threshold' => $threshold,
-                'indicators' => $suspiciousIndicators,
-            ]);
             $this->handlePotentiallySuspiciousActivity($suspiciousIndicators, $score);
-            return true; // Reselling detected
+            return true;
         }
 
-        return false; // No reselling detected
+        return false;
     }
 
     /**
-     * Check for multiple domains using same license
+     * Check for multiple domains using same system key
      */
     public function checkMultipleDomainUsage(): int
     {
-        $domainKey = 'helper_domains_' . md5(config('helpers.helper_key'));
+        $domainKey = 'system_domains_' . md5(config('utils.system_key'));
         $domains = Cache::get($domainKey, []);
         
         $currentDomain = request()->getHost();
@@ -59,27 +48,18 @@ class CopyProtectionService
             Cache::put($domainKey, $domains, now()->addDays(30));
         }
 
-        // Multiple domains = potential reselling indicator
-        // Allow max 3 domains per license (allows staging + production + dev)
-        $maxAllowed = config('helpers.anti_reselling.max_domains', 3);
+        // Allow max 2 domains per system key
+        $maxAllowed = config('utils.anti_reselling.max_domains', 2);
         if (count($domains) > $maxAllowed) {
-            Log::warning('Multiple domains detected - potential reselling', [
+            app(\Acme\Utils\Services\RemoteSecurityLogger::class)->critical('Multiple domains detected', [
                 'domains' => $domains,
-                'max_allowed' => $maxAllowed,
+                'system_key' => config('utils.system_key'),
                 'excess_count' => count($domains) - $maxAllowed,
             ]);
-            
-            app(\InsuranceCore\Helpers\Services\RemoteSecurityLogger::class)->critical('Multiple domains detected - reselling suspected', [
-                'domains' => $domains,
-                'license_key' => config('helpers.helper_key'),
-                'excess_count' => count($domains) - $maxAllowed,
-            ]);
-            return 50; // High suspicion score (primary reselling indicator)
+            return 50; // High suspicion score
         }
 
-        // Multiple domains (even within limit) is slightly suspicious but acceptable
-        // Only flag if 3+ domains (allows legitimate multi-environment setups)
-        return count($domains) >= 3 ? 15 : 0; // Reduced from 20 to 15, only if 3+ domains
+        return count($domains) > 1 ? 20 : 0;
     }
 
     /**
@@ -87,7 +67,7 @@ class CopyProtectionService
      */
     public function analyzeUsagePatterns(): int
     {
-        $usageKey = 'usage_pattern_' . md5(config('helpers.helper_key'));
+        $usageKey = 'usage_pattern_' . md5(config('utils.system_key'));
         $patterns = Cache::get($usageKey, []);
 
         $currentPattern = [
@@ -113,28 +93,25 @@ class CopyProtectionService
         $score = 0;
         
         // Different IP ranges suggest multiple installations
-        // More lenient: only flag if many different IP ranges (legitimate load balancers use multiple IPs)
         $uniqueIPRanges = count(array_unique(array_column($patterns, 'ip_range')));
-        if ($uniqueIPRanges > 5) { // Increased from 2 to 5
-            $score += 20; // Reduced from 30
+        if ($uniqueIPRanges > 2) {
+            $score += 30;
         }
 
         // Different user agents suggest different clients
-        // More lenient: many legitimate sites have diverse user agents
         $uniqueUserAgents = count(array_unique(array_column($patterns, 'user_agent')));
-        if ($uniqueUserAgents > 10) { // Increased from 5 to 10
-            $score += 15; // Reduced from 25
+        if ($uniqueUserAgents > 5) {
+            $score += 25;
         }
 
         // Access patterns indicating demo/trial behavior
-        // More lenient: high-traffic legitimate sites can have many requests
         $hourDistribution = array_count_values(array_column($patterns, 'time'));
         $unusualHours = count(array_filter($hourDistribution, function($count) {
-            return $count > 500; // Increased from 100 to 500 requests per hour
+            return $count > 100; // More than 100 requests in single hour
         }));
         
         if ($unusualHours > 0) {
-            $score += 10; // Reduced from 20
+            $score += 20;
         }
 
         return $score;
@@ -148,12 +125,12 @@ class CopyProtectionService
         $score = 0;
         
         // Check if application has been downloaded/moved recently
-        $installFingerprint = app(\InsuranceCore\Helpers\Helper::class)->generateHardwareFingerprint();
-        $storedFingerprint = Cache::get('original_fingerprint_' . md5(config('helpers.helper_key')));
+        $installFingerprint = app(\Acme\Utils\Manager::class)->generateHardwareFingerprint();
+        $storedFingerprint = Cache::get('original_fingerprint_' . md5(config('utils.system_key')));
         
         if (!$storedFingerprint) {
             // First time, store current fingerprint
-            Cache::put('original_fingerprint_' . md5(config('helpers.helper_key')), $installFingerprint, now()->addYears(1));
+            Cache::put('original_fingerprint_' . md5(config('utils.system_key')), $installFingerprint, now()->addYears(1));
             $score += 0; // Not suspicious on first run
         } else {
             // Check if fingerprint changed significantly
@@ -161,7 +138,7 @@ class CopyProtectionService
             if ($percent < 85) {
                 $score += 40; // High suspicion - significant hardware change
                 
-                app(\InsuranceCore\Helpers\Services\RemoteSecurityLogger::class)->warning('Significant hardware fingerprint change', [
+                app(\Acme\Utils\Services\RemoteSecurityLogger::class)->warning('Significant hardware fingerprint change', [
                     'old_fingerprint' => substr($storedFingerprint, 0, 32) . '...',
                     'new_fingerprint' => substr($installFingerprint, 0, 32) . '...',
                     'similarity' => $percent,
@@ -182,7 +159,6 @@ class CopyProtectionService
         // List of critical files that shouldn't be modified
         $criticalFiles = [
             'app/Http/Kernel.php',
-            'config/helpers.php',
             'config/app.php',
             'routes/web.php',
         ];
@@ -205,7 +181,7 @@ class CopyProtectionService
                     } elseif ($storedHash !== $currentHash) {
                         $score += 25; // High suspicion - file modification
                         
-                        app(\InsuranceCore\Helpers\Services\RemoteSecurityLogger::class)->critical('Unauthorized file modification detected', [
+                        app(\Acme\Utils\Services\RemoteSecurityLogger::class)->critical('Unauthorized file modification detected', [
                             'file' => $filePath,
                             'old_hash' => $storedHash,
                             'new_hash' => $currentHash
@@ -227,15 +203,9 @@ class CopyProtectionService
 
     /**
      * Analyze network behavior for suspicious patterns
-     * Only active if network_analysis is enabled (disabled by default)
      */
     public function analyzeNetworkBehavior(): int
     {
-        // Skip if network analysis is disabled (many legitimate users use VPNs)
-        if (!config('helpers.anti_reselling.network_analysis', false)) {
-            return 0;
-        }
-        
         $score = 0;
         
         // Check for VPN/Proxy usage patterns
@@ -254,15 +224,14 @@ class CopyProtectionService
         $ipData['request_count']++;
         Cache::put("ip_data_{$ip}", $ipData, now()->addDays(7));
 
-        // VPN/Proxy detection (basic heuristics) - only if explicitly enabled
-        if (config('helpers.anti_reselling.detect_vpn', false) && $ipData['is_vpn_suspicious']) {
-            $score += 10; // Reduced from 15
+        // VPN/Proxy detection (basic heuristics)
+        if ($ipData['is_vpn_suspicious']) {
+            $score += 15;
         }
 
         // Rapid request patterns suggesting automated tools
-        // More lenient: legitimate high-traffic sites can have many requests
-        if ($ipData['request_count'] > 5000) { // Increased from 1000 to 5000
-            $score += 15; // Reduced from 20
+        if ($ipData['request_count'] > 1000) {
+            $score += 20;
         }
 
         return $score;
@@ -277,7 +246,7 @@ class CopyProtectionService
         $clusterKey = "geo_cluster_{$geoKey}";
         
         $installations = Cache::get($clusterKey, []);
-        $currentInstallation = md5(config('helpers.helper_key') . config('helpers.client_id'));
+        $currentInstallation = md5(config('utils.system_key') . config('utils.client_id'));
         
         if (!in_array($currentInstallation, $installations)) {
             $installations[] = $currentInstallation;
@@ -285,7 +254,7 @@ class CopyProtectionService
         }
 
         // Too many installations in same geographic area
-        $maxAllowedInCluster = config('helpers.anti_reselling.max_per_geo', 3);
+        $maxAllowedInCluster = config('utils.anti_reselling.max_per_geo', 3);
         if (count($installations) > $maxAllowedInCluster) {
             return 35; // Suspicious clustering
         }
@@ -310,9 +279,9 @@ class CopyProtectionService
     public function handlePotentiallySuspiciousActivity(array $indicators, int $score): void
     {
         // Record incident
-        app(\InsuranceCore\Helpers\Services\RemoteSecurityLogger::class)->alert('Potentially suspicious activity detected', [
-            'license_key' => config('helpers.helper_key'),
-            'client_id' => config('helpers.client_id'),
+        app(\Acme\Utils\Services\RemoteSecurityLogger::class)->alert('Potentially suspicious activity detected', [
+            'system_key' => config('utils.system_key'),
+            'client_id' => config('utils.client_id'),
             'domain' => request()->getHost(),
             'ip' => request()->ip(),
             'score' => $score,
@@ -320,7 +289,7 @@ class CopyProtectionService
             'timestamp' => now(),
         ]);
 
-        // Report to license server
+        // Report to validation server
         $this->reportSuspiciousActivity($score, $indicators);
 
         // Trigger additional security measures
@@ -328,21 +297,19 @@ class CopyProtectionService
     }
 
     /**
-     * Report suspicious activity to license server
+     * Report suspicious activity to validation server
      */
     public function reportSuspiciousActivity(int $score, array $indicators): void
     {
         try {
-            $licenseServer = config('helpers.helper_server') ?: 'https://license.acecoderz.com/';
-            // Normalize URL: remove trailing slashes to avoid double slashes
-            $licenseServer = rtrim($licenseServer, '/');
-            $apiToken = config('helpers.api_token');
+            $validationServer = config('utils.validation_server');
+            $apiToken = config('utils.api_token');
 
             Http::timeout(10)->withHeaders([
                 'Authorization' => 'Bearer ' . $apiToken,
-            ])->post("{$licenseServer}/api/report-suspicious", [
-                'license_key' => config('helpers.helper_key'),
-                'client_id' => config('helpers.client_id'),
+            ])->post("{$validationServer}/api/report-suspicious", [
+                'system_key' => config('utils.system_key'),
+                'client_id' => config('utils.client_id'),
                 'score' => $score,
                 'indicators' => $indicators,
                 'domain' => request()->getHost(),
@@ -351,7 +318,7 @@ class CopyProtectionService
             ]);
 
         } catch (\Exception $e) {
-            app(\InsuranceCore\Helpers\Services\RemoteSecurityLogger::class)->error('Failed to report suspicious activity', [
+            app(\Acme\Utils\Services\RemoteSecurityLogger::class)->error('Failed to report suspicious activity', [
                 'error' => $e->getMessage(),
             ]);
         }
@@ -365,19 +332,19 @@ class CopyProtectionService
         // Higher scores trigger more aggressive measures
         if ($score >= 90) {
             // Immediate cache block for this installation
-            Cache::put('security_block_' . md5(config('helpers.helper_key')), true, now()->addHours(24));
+            Cache::put('security_block_' . md5(config('utils.system_key')), true, now()->addHours(24));
             
-            // Force license server validation
-            Cache::forget('helper_valid_' . md5(config('helpers.helper_key')));
+            // Force validation server check
+            Cache::forget('system_valid_' . md5(config('utils.system_key')));
             
         } elseif ($score >= 75) {
             // Reduce cache duration for frequent validation
-            Cache::put('high_attention_' . md5(config('helpers.helper_key')), true, now()->addHours(12));
+            Cache::put('high_attention_' . md5(config('utils.system_key')), true, now()->addHours(12));
         }
     }
 
     /**
-     * Helper methods
+     * Utility methods
      */
     public function getIPRange(string $ip): string
     {

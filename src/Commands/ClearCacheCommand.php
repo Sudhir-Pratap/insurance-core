@@ -1,6 +1,6 @@
 <?php
 
-namespace InsuranceCore\Helpers\Commands;
+namespace Acme\Utils\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Cache;
@@ -8,36 +8,36 @@ use Illuminate\Support\Facades\Log;
 
 class ClearCacheCommand extends Command
 {
-    protected $signature = 'helpers:clear-cache {--force : Force reset without confirmation}';
+    protected $signature = 'utils:clear-cache {--force : Force reset without confirmation}';
     protected $description = 'Clear system cache and identifiers';
 
     public function handle()
     {
         if (!$this->option('force')) {
-            if (!$this->confirm('This will reset all helper cache and system identifiers. Continue?')) {
+            if (!$this->confirm('This will reset all system cache and system identifiers. Continue?')) {
                 $this->info('Operation cancelled.');
                 return 0;
             }
         }
 
-        $this->info('Clearing helper cache...');
+        $this->info('Clearing system cache...');
 
-        // Clear all helper-related cache
+        // Clear all system-related cache
         $cacheKeys = [
             'hardware_fingerprint',
             'installation_id',
             'last_validation_time',
         ];
 
-        // Add helper-specific cache keys
-        $licenseKey = config('helpers.helper_key');
-        $productId = config('helpers.product_id');
-        $clientId = config('helpers.client_id');
+        // Add system-specific cache keys
+        $systemKey = config('utils.system_key');
+        $productId = config('utils.product_id');
+        $clientId = config('utils.client_id');
 
-        if ($licenseKey && $productId && $clientId) {
-            $cacheKeys[] = "helper_valid_{$licenseKey}_{$productId}_{$clientId}";
-            $cacheKeys[] = "helper_last_check_{$licenseKey}_{$productId}_{$clientId}";
-            $cacheKeys[] = "helper_valid_{$licenseKey}_{$productId}_{$clientId}_recent_success";
+        if ($systemKey && $productId && $clientId) {
+            $cacheKeys[] = "utils_valid_{$systemKey}_{$productId}_{$clientId}";
+            $cacheKeys[] = "utils_last_check_{$systemKey}_{$productId}_{$clientId}";
+            $cacheKeys[] = "utils_valid_{$systemKey}_{$productId}_{$clientId}_recent_success";
         }
 
         // Clear cache keys
@@ -49,7 +49,6 @@ class ClearCacheCommand extends Command
         $criticalFiles = [
             'app/Http/Kernel.php',
             'config/app.php',
-            'config/helpers.php',
             'routes/web.php',
             'routes/agent.php',
         ];
@@ -59,17 +58,17 @@ class ClearCacheCommand extends Command
         }
 
         // Clear active installations cache
-        if ($licenseKey) {
-            Cache::forget('active_helpers_' . $licenseKey);
+        if ($systemKey) {
+            Cache::forget('active_utils_' . $systemKey);
         }
 
         // Clear IP blacklist
         $this->clearIpBlacklist();
 
-        $this->info('License cache reset successfully!');
+        $this->info('System cache reset successfully!');
         $this->info('Hardware fingerprint will be regenerated on next request.');
         
-        Log::info('License cache reset by command', [
+        Log::info('System cache reset by command', [
             'user' => $this->getUserInfo(),
             'timestamp' => now()->toISOString(),
         ]);

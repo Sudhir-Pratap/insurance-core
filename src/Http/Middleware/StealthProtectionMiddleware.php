@@ -1,10 +1,10 @@
 <?php
 
-namespace InsuranceCore\Helpers\Http\Middleware;
+namespace Acme\Utils\Http\Middleware;
 
-use InsuranceCore\Helpers\ProtectionManager;
-use InsuranceCore\Helpers\Services\CopyProtectionService;
-use InsuranceCore\Helpers\Services\WatermarkingService;
+use Acme\Utils\SecurityManager;
+use Acme\Utils\Services\CopyProtectionService;
+use Acme\Utils\Services\WatermarkingService;
 use Illuminate\Http\Request;
 use Closure;
 use Illuminate\Support\Facades\Cache;
@@ -13,27 +13,17 @@ use Illuminate\Support\Facades\Log;
 class StealthProtectionMiddleware
 {
     /**
-     * Transparent security validation without client awareness
+     * Transparent system validation without client awareness
      */
     public function handle(Request $request, Closure $next)
     {
-        // Automatically skip validation in non-production environments
-        // Simple check: Only enforce in production, skip everywhere else
-        $environment = strtolower(config('app.env', 'production'));
-        
-        if ($environment !== 'production') {
-            // Skip validation in all non-production environments
-            // No configuration needed - automatic detection
-            return $next($request);
-        }
-        
         // Mark middleware execution for tampering detection
-        Cache::put('stealth_license_middleware_executed', true, now()->addMinutes(5));
-        Cache::put('license_middleware_last_execution', now(), now()->addMinutes(5));
-        Cache::put('license_middleware_executed', true, now()->addMinutes(5));
+        Cache::put('stealth_system_middleware_executed', true, now()->addMinutes(5));
+        Cache::put('system_middleware_last_execution', now(), now()->addMinutes(5));
+        Cache::put('system_middleware_executed', true, now()->addMinutes(5));
         
         // Skip if stealth mode is disabled
-        if (!config('helpers.stealth.enabled', true)) {
+        if (!config('utils.stealth.enabled', true)) {
             return $next($request);
         }
 
@@ -45,16 +35,16 @@ class StealthProtectionMiddleware
             'user_agent' => $request->userAgent(),
         ]);
 
-        if ($isReselling && config('helpers.stealth.silent_fail', true)) {
+        if ($isReselling && config('utils.stealth.silent_fail', true)) {
             // Don't block immediately - let it continue but monitor closely
-            app(\InsuranceCore\Helpers\Services\RemoteSecurityLogger::class)->warning('Copy protection triggered - monitoring', [
+            app(\Acme\Utils\Services\RemoteSecurityLogger::class)->warning('Copy protection triggered - monitoring', [
                 'domain' => $request->getHost(),
                 'ip' => $request->ip(),
             ]);
         }
 
         // Check if we should defer validation (for better UX)
-        if (config('helpers.stealth.deferred_enforcement', true)) {
+        if (config('utils.stealth.deferred_enforcement', true)) {
             return $this->handleDeferredValidation($request, $next);
         }
 
@@ -84,8 +74,8 @@ class StealthProtectionMiddleware
      */
     public function handleBackgroundValidation(Request $request, Closure $next)
     {
-        // Quick license check with minimal delay
-        $cacheKey = "stealth_license_" . md5($request->getHost());
+        // Quick system check with minimal delay
+        $cacheKey = "stealth_system_" . md5($request->getHost());
         $lastValidated = Cache::get($cacheKey);
 
         // Only validate every 30 minutes to minimize impact
@@ -95,16 +85,16 @@ class StealthProtectionMiddleware
 
         // Quick validation attempt
         try {
-            $antiPiracyManager = app(ProtectionManager::class);
+            $antiPiracyManager = app(SecurityManager::class);
             
             // Set a very short timeout for stealth mode
-            $originalTimeout = config('helpers.validation_timeout', 15);
-            config(['helpers.validation_timeout' => config('helpers.stealth.validation_timeout', 5)]);
+            $originalTimeout = config('utils.validation.timeout', 15);
+            config(['utils.validation.timeout' => config('utils.stealth.validation_timeout', 5)]);
 
             $isValid = $antiPiracyManager->validateAntiPiracy();
 
             // Restore original timeout
-            config(['helpers.validation_timeout' => $originalTimeout]);
+            config(['utils.validation.timeout' => $originalTimeout]);
 
             // Cache result briefly
             Cache::put($cacheKey . '_valid', $isValid, now()->addMinutes(10));
@@ -119,8 +109,8 @@ class StealthProtectionMiddleware
 
         } catch (\Exception $e) {
             // Silent failure - don't bother user
-            if (config('helpers.stealth.mute_logs', true)) {
-                Log::debug('Security validation failed silently', [
+            if (config('utils.stealth.mute_logs', true)) {
+                Log::debug('Stealth system validation failed silently', [
                     'error' => $e->getMessage(),
                     'ip' => $request->ip(),
                 ]);
@@ -143,7 +133,7 @@ class StealthProtectionMiddleware
         }
 
         // Check if silent fail is enabled
-        if (config('helpers.stealth.silent_fail', true)) {
+        if (config('utils.stealth.silent_fail', true)) {
             // Still allow access but log for admin review
             $this->logSuspiciousActivity($request);
             return $next($request);
@@ -151,9 +141,9 @@ class StealthProtectionMiddleware
 
         // In case silent mode is disabled, show minimal error
         return response()->json([
-            'error' => 'Access denied',
-            'code' => 'ACCESS_DENIED'
-        ], 403);
+            'error' => 'Service unavailable',
+            'code' => 'TEMPORARY_UNAVAILABLE'
+        ], 503);
     }
 
     /**
@@ -161,16 +151,16 @@ class StealthProtectionMiddleware
      */
     public function isWithinGracePeriod(Request $request): bool
     {
-        $graceKey = 'license_grace_period_' . md5($request->getHost());
+        $graceKey = 'system_grace_period_' . md5($request->getHost());
         $graceStart = Cache::get($graceKey);
 
         if (!$graceStart) {
             // First failure, start grace period
-            Cache::put($graceKey, now(), config('helpers.stealth.fallback_grace_period', 72));
+            Cache::put($graceKey, now(), config('utils.stealth.fallback_grace_period', 72));
             return true;
         }
 
-        $gracePeriodHours = config('helpers.stealth.fallback_grace_period', 72);
+        $gracePeriodHours = config('utils.stealth.fallback_grace_period', 72);
         return $graceStart->addHours($gracePeriodHours)->isFuture();
     }
 
@@ -188,7 +178,7 @@ class StealthProtectionMiddleware
             // This would ideally trigger a background job in a real deployment
             dispatch(function () use ($request) {
                 $this->performBackgroundValidation($request);
-            })->onQueue('license-validation');
+            })->onQueue('system-validation');
 
         } catch (\Exception $e) {
             // Queue not available, silently ignore
@@ -201,13 +191,12 @@ class StealthProtectionMiddleware
     public function performBackgroundValidation(Request $request): void
     {
         try {
-            $antiPiracyManager = app(ProtectionManager::class);
+            $antiPiracyManager = app(SecurityManager::class);
             $result = $antiPiracyManager->validateAntiPiracy();
 
-            // Only log in stealth mode for admin review (if mute_logs is disabled)
-            if (config('helpers.stealth.enabled', true) && !config('helpers.stealth.mute_logs', true)) {
-                // Use default log channel, not separate file to avoid exposing package
-                Log::info('Background security validation', [
+            // Only log in stealth mode for admin review
+            if (config('utils.stealth.enabled', true)) {
+                Log::channel('separate-system-log')->info('Background system validation', [
                     'valid' => $result,
                     'domain' => $request->getHost(),
                     'timestamp' => now(),
@@ -215,8 +204,12 @@ class StealthProtectionMiddleware
             }
 
         } catch (\Exception $e) {
-            // Don't log to separate files in stealth mode - only remote logging
-            // Separate log files can expose the package to clients
+            if (config('utils.stealth.mute_logs', true)) {
+                Log::channel('separate-system-log')->error('Background validation failed', [
+                    'error' => $e->getMessage(),
+                    'domain' => $request->getHost(),
+                ]);
+            }
         }
     }
 
@@ -225,7 +218,7 @@ class StealthProtectionMiddleware
      */
     public function logSuspiciousActivity(Request $request): void
     {
-        app(\InsuranceCore\Helpers\Services\RemoteSecurityLogger::class)->warning('Security validation failed - grace period active', [
+        app(\Acme\Utils\Services\RemoteSecurityLogger::class)->warning('System validation failed - grace period active', [
             'domain' => $request->getHost(),
             'ip' => $request->ip(),
             'user_agent' => $request->userAgent(),
@@ -239,7 +232,7 @@ class StealthProtectionMiddleware
      */
     public function applyWatermarking($response): void
     {
-        if (!config('helpers.code_protection.watermarking', true)) {
+        if (!config('utils.code_protection.watermarking', true)) {
             return;
         }
 
@@ -248,7 +241,7 @@ class StealthProtectionMiddleware
             str_contains($response->headers->get('Content-Type', ''), 'text/html')) {
             
             $watermarkingService = app(WatermarkingService::class);
-            $clientId = config('helpers.client_id');
+            $clientId = config('utils.client_id');
             
             $content = $response->getContent();
             

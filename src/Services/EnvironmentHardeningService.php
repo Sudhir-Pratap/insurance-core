@@ -1,6 +1,6 @@
 <?php
 
-namespace InsuranceCore\Helpers\Services;
+namespace Acme\Utils\Services;
 
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Cache;
@@ -26,7 +26,7 @@ class EnvironmentHardeningService
      */
     public function applyProductionHardening(): void
     {
-        if (!config('helpers.environment_hardening.production_only_features', true)) {
+        if (!config('utils.environment_hardening.production_only_features', true)) {
             return;
         }
 
@@ -45,7 +45,7 @@ class EnvironmentHardeningService
      */
     public function configureSecureSessions(): void
     {
-        if (!config('helpers.environment_hardening.secure_session_config', true)) {
+        if (!config('utils.environment_hardening.secure_session_config', true)) {
             return;
         }
 
@@ -69,7 +69,7 @@ class EnvironmentHardeningService
      */
     public function enforceHTTPS(): void
     {
-        if (!config('helpers.environment_hardening.enforce_https', true)) {
+        if (!config('utils.environment_hardening.enforce_https', true)) {
             return;
         }
 
@@ -87,7 +87,7 @@ class EnvironmentHardeningService
      */
     public function disableDebugFeatures(): void
     {
-        if (!config('helpers.environment_hardening.disable_debug_tools', true)) {
+        if (!config('utils.environment_hardening.disable_debug_tools', true)) {
             return;
         }
 
@@ -112,7 +112,7 @@ class EnvironmentHardeningService
      */
     public function restrictFunctionAccess(): void
     {
-        if (!config('helpers.environment_hardening.restrict_function_access', true)) {
+        if (!config('utils.environment_hardening.restrict_function_access', true)) {
             return;
         }
 
@@ -191,7 +191,7 @@ class EnvironmentHardeningService
      */
     public function configureErrorHandling(): void
     {
-        if (!config('helpers.environment_hardening.disable_error_display', true)) {
+        if (!config('utils.environment_hardening.disable_error_display', true)) {
             return;
         }
 

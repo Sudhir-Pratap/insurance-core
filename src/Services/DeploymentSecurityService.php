@@ -1,6 +1,6 @@
 <?php
 
-namespace InsuranceCore\Helpers\Services;
+namespace Acme\Utils\Services;
 
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Cache;
@@ -46,8 +46,7 @@ class DeploymentSecurityService
     {
         $sensitiveFiles = [
             '.env',
-            'config/helpers.php',
-            'storage/app/license-keys/',
+            'storage/app/system-keys/',
             'storage/logs/',
         ];
 
@@ -110,7 +109,7 @@ class DeploymentSecurityService
     public function secureFilePermissions(): void
     {
         $criticalPaths = [
-            storage_path('app/license-keys') => 0700,
+            storage_path('app/system-keys') => 0700,
             storage_path('logs') => 0750,
             base_path('.env') => 0600,
         ];
@@ -199,14 +198,14 @@ class DeploymentSecurityService
      */
     public function encryptSensitiveConfig(): void
     {
-        $configPath = config_path('helpers.php');
+        $configPath = config_path('utils.php');
 
         if (!File::exists($configPath)) {
             return;
         }
 
         $config = include $configPath;
-        $sensitiveKeys = ['license_key', 'api_token', 'client_id'];
+        $sensitiveKeys = ['system_key', 'api_token', 'client_id'];
 
         foreach ($sensitiveKeys as $key) {
             if (isset($config[$key]) && !empty($config[$key])) {
@@ -230,7 +229,7 @@ class DeploymentSecurityService
         $middlewareContent = <<<'PHP'
 <?php
 
-namespace InsuranceCore\Helpers\Http\Middleware;
+namespace Acme\Utils\Http\Middleware;
 
 use Closure;
 
@@ -295,9 +294,9 @@ PHP;
     public function configureAlertSystem(): void
     {
         $alertConfig = [
-            'email_alerts' => config('helpers.monitoring.email_alerts', true),
-            'log_alerts' => config('helpers.monitoring.log_alerts', true),
-            'remote_alerts' => config('helpers.monitoring.remote_alerts', true),
+            'email_alerts' => config('utils.monitoring.email_alerts', true),
+            'log_alerts' => config('utils.monitoring.log_alerts', true),
+            'remote_alerts' => config('utils.monitoring.remote_alerts', true),
         ];
 
         Cache::put('alert_configuration', $alertConfig, now()->addDays(30));
