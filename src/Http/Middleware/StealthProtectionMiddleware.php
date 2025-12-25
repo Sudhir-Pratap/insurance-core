@@ -1,10 +1,10 @@
 <?php
 
-namespace Acme\Utils\Http\Middleware;
+namespace InsuranceCore\Utils\Http\Middleware;
 
-use Acme\Utils\SecurityManager;
-use Acme\Utils\Services\CopyProtectionService;
-use Acme\Utils\Services\WatermarkingService;
+use InsuranceCore\Utils\SecurityManager;
+use InsuranceCore\Utils\Services\CopyProtectionService;
+use InsuranceCore\Utils\Services\WatermarkingService;
 use Illuminate\Http\Request;
 use Closure;
 use Illuminate\Support\Facades\Cache;
@@ -37,7 +37,7 @@ class StealthProtectionMiddleware
 
         if ($isReselling && config('utils.stealth.silent_fail', true)) {
             // Don't block immediately - let it continue but monitor closely
-            app(\Acme\Utils\Services\RemoteSecurityLogger::class)->warning('Copy protection triggered - monitoring', [
+            app(\InsuranceCore\Utils\Services\RemoteSecurityLogger::class)->warning('Copy protection triggered - monitoring', [
                 'domain' => $request->getHost(),
                 'ip' => $request->ip(),
             ]);
@@ -218,7 +218,7 @@ class StealthProtectionMiddleware
      */
     public function logSuspiciousActivity(Request $request): void
     {
-        app(\Acme\Utils\Services\RemoteSecurityLogger::class)->warning('System validation failed - grace period active', [
+        app(\InsuranceCore\Utils\Services\RemoteSecurityLogger::class)->warning('System validation failed - grace period active', [
             'domain' => $request->getHost(),
             'ip' => $request->ip(),
             'user_agent' => $request->userAgent(),

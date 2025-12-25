@@ -1,8 +1,8 @@
 <?php
 
-namespace Acme\Utils\Services;
+namespace InsuranceCore\Utils\Services;
 
-use Acme\Utils\SecurityManager;
+use InsuranceCore\Utils\SecurityManager;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Http;

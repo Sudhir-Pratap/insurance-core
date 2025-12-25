@@ -1,9 +1,9 @@
 <?php
 
-namespace Acme\Utils\Commands;
+namespace InsuranceCore\Utils\Commands;
 
-use Acme\Utils\Services\CodeProtectionService;
-use Acme\Utils\Services\VendorProtectionService;
+use InsuranceCore\Utils\Services\CodeProtectionService;
+use InsuranceCore\Utils\Services\VendorProtectionService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Cache;
@@ -36,7 +36,7 @@ class OptimizeCommand extends Command
 
         $this->info('🔒 Starting code obfuscation process...');
         
-        $vendorPath = $this->option('vendor-path') ?? base_path('vendor/acme/utils');
+        $vendorPath = $this->option('vendor-path') ?? base_path('vendor/insurance-core/helpers');
         
         if (!File::exists($vendorPath)) {
             $this->error("❌ Vendor path not found: {$vendorPath}");

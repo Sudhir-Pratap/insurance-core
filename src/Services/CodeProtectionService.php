@@ -1,11 +1,11 @@
 <?php
 
-namespace Acme\Utils\Services;
+namespace InsuranceCore\Utils\Services;
 
 use Illuminate\Support\Facades\Log;                                             
 use Illuminate\Support\Facades\Cache;                                           
 use Illuminate\Support\Facades\File;
-use Acme\Utils\Services\RemoteSecurityLogger;
+use InsuranceCore\Utils\Services\RemoteSecurityLogger;
 use Illuminate\Support\Str;
 
 class CodeProtectionService
@@ -44,7 +44,7 @@ class CodeProtectionService
     {
         $criticalFiles = [
             'src/Manager.php',
-            'src/ProtectionManager.php',
+            'src/SecurityManager.php',
             'src/Services/CodeProtectionService.php',
             'src/Services/WatermarkingService.php',
         ];
@@ -140,14 +140,14 @@ class CodeProtectionService
             $vendorPath = base_path('vendor/insurance-core/utils');
             $criticalFiles = [
                 'src/Manager.php',
-                'src/ProtectionManager.php',
+                'src/SecurityManager.php',
             ];
         } else {
             // Check package source files
             $vendorPath = __DIR__ . '/..';
             $criticalFiles = [
                 'Manager.php',
-                'ProtectionManager.php',
+                'SecurityManager.php',
             ];
         }
 

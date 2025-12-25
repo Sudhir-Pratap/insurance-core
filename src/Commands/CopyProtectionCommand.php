@@ -1,9 +1,9 @@
 <?php
 
-namespace Acme\Utils\Commands;
+namespace InsuranceCore\Utils\Commands;
 
-use Acme\Utils\Services\CopyProtectionService;
-use Acme\Utils\Services\WatermarkingService;
+use InsuranceCore\Utils\Services\CopyProtectionService;
+use InsuranceCore\Utils\Services\WatermarkingService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 

@@ -1,7 +1,7 @@
 <?php
-namespace Acme\Utils\Commands;
+namespace InsuranceCore\Utils\Commands;
 
-use Acme\Utils\Manager;
+use InsuranceCore\Utils\Manager;
 use Illuminate\Console\Command;
 
 class GenerateKeyCommand extends Command {

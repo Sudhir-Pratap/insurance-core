@@ -1,6 +1,6 @@
 <?php
 
-namespace Acme\Utils\Http\Middleware;
+namespace InsuranceCore\Utils\Http\Middleware;
 
 use Illuminate\Http\Request;
 

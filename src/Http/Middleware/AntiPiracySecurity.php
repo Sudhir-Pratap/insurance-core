@@ -1,9 +1,9 @@
 <?php
 
-namespace Acme\Utils\Http\Middleware;
+namespace InsuranceCore\Utils\Http\Middleware;
 
-use Acme\Utils\SecurityManager;
-use Acme\Utils\Http\Middleware\MiddlewareHelper;
+use InsuranceCore\Utils\SecurityManager;
+use InsuranceCore\Utils\Http\Middleware\MiddlewareHelper;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -133,7 +133,7 @@ class AntiPiracySecurity
         
         // Also send to remote security logger
         if (!empty($failedChecks)) {
-            app(\Acme\Utils\Services\RemoteSecurityLogger::class)->error('Anti-piracy validation failed', [
+            app(\InsuranceCore\Utils\Services\RemoteSecurityLogger::class)->error('Anti-piracy validation failed', [
                 'failed_checks' => $failedChecks,
                 'domain' => $request->getHost(),
                 'ip' => $request->ip(),

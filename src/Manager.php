@@ -1,5 +1,5 @@
 <?php
-namespace Acme\Utils;
+namespace InsuranceCore\Utils;
 
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Cache;
@@ -63,7 +63,7 @@ class Manager {
 		$checksum = hash('sha256', $systemKey . $productId . $originalClientId . $hardwareFingerprint . $cryptoKey);
 
 		// Get remote logger for comprehensive logging
-		$remoteLogger = app(\Acme\Utils\Services\RemoteSecurityLogger::class);
+		$remoteLogger = app(\InsuranceCore\Utils\Services\RemoteSecurityLogger::class);
 
 		// Force server check every 30 minutes (reduced from 60)
 		$lastCheck = Cache::get($lastCheckKey);

@@ -19,17 +19,17 @@ composer require insurance-core/helpers
 ### Step 2: Publish Configuration
 
 ```bash
-php artisan vendor:publish --provider="InsuranceCore\Helpers\HelperServiceProvider"
+php artisan vendor:publish --provider="InsuranceCore\Utils\UtilsServiceProvider" --tag=config
 ```
 
-This creates the `config/helpers.php` file with all default settings.
+This creates the `config/utils.php` file with all default settings.
 
 ### Step 3: Get System Information
 
 Run the following command to get your system identifiers:
 
 ```bash
-php artisan helpers:info
+php artisan utils:info
 ```
 
 **Output Example:**
@@ -61,7 +61,7 @@ You need to generate a system key on your license server using the information f
 #### Option A: Using Artisan Command (if you have access to license server)
 
 ```bash
-php artisan helpers:generate \
+php artisan utils:generate-key \
   --product-id=YOUR_PRODUCT_ID \
   --domain=example.com \
   --ip=192.168.1.100 \
@@ -140,7 +140,7 @@ php artisan cache:clear
 Check if your configuration is correct:
 
 ```bash
-php artisan helpers:info
+php artisan utils:info
 ```
 
 **Expected Output:**
@@ -174,7 +174,7 @@ This creates integrity baselines for all vendor files.
 Verify everything is working correctly:
 
 ```bash
-php artisan helpers:diagnose
+php artisan utils:diagnose
 ```
 
 This will check:
@@ -191,10 +191,10 @@ After activation, you can check if validation is working:
 
 ```bash
 # Quick status check
-php artisan helpers:diagnose
+php artisan utils:diagnose
 
 # Detailed system information
-php artisan helpers:info
+php artisan utils:info
 ```
 
 **Success Indicators:**
@@ -263,7 +263,7 @@ When deploying to production:
 **Solution:**
 1. Check `HELPER_API_TOKEN` is correct
 2. Verify `HELPER_SERVER` URL is accessible
-3. Check server connectivity: `php artisan helpers:diagnose`
+3. Check server connectivity: `php artisan utils:diagnose`
 4. Verify the system key matches the server records
 
 ### Issue: "Hardware fingerprint mismatch"
@@ -284,10 +284,10 @@ When deploying to production:
 
 ```bash
 # Get system information
-php artisan helpers:info
+php artisan utils:info
 
 # Check validation status (RECOMMENDED)
-php artisan helpers:diagnose
+php artisan utils:diagnose
 
 # Fix deployment issues
 php artisan helpers:deployment --fix
@@ -310,7 +310,7 @@ php artisan helpers:clear-cache
 ### Method 1: Diagnosis Command (Recommended)
 
 ```bash
-php artisan helpers:diagnose
+php artisan utils:diagnose
 ```
 
 **Success Output:**
@@ -365,13 +365,13 @@ This will show:
 
 - [ ] Package installed via Composer
 - [ ] Configuration published
-- [ ] System information retrieved (`helpers:info`)
+- [ ] System information retrieved (`utils:info`)
 - [ ] System key generated on license server
 - [ ] Environment variables added to `.env`
 - [ ] Configuration cache cleared
-- [ ] Configuration verified (`helpers:info`)
+- [ ] Configuration verified (`utils:info`)
 - [ ] Vendor protection setup (`helpers:protect --setup`)
-- [ ] Diagnostics passed (`helpers:diagnose`)
+- [ ] Diagnostics passed (`utils:diagnose`)
 - [ ] Security audit passed (`helpers:audit`)
 - [ ] Validation tested (`helpers:deployment --test`)
 
@@ -392,7 +392,7 @@ After activation, the package will:
 
 If you encounter issues during activation:
 
-1. Run `php artisan helpers:diagnose` to identify problems
+1. Run `php artisan utils:diagnose` to identify problems
 2. Check the troubleshooting section above
 3. Review server logs for detailed error messages
 4. Contact support with diagnostic output

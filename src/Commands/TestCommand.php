@@ -1,7 +1,7 @@
 <?php
-namespace Acme\Utils\Commands;
+namespace InsuranceCore\Utils\Commands;
 
-use Acme\Utils\SecurityManager;
+use InsuranceCore\Utils\SecurityManager;
 use Illuminate\Console\Command;
 
 class TestCommand extends Command {

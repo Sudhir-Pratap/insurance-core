@@ -1,6 +1,6 @@
 <?php
 
-namespace Acme\Utils\Commands;
+namespace InsuranceCore\Utils\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Cache;

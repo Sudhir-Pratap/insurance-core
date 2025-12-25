@@ -13,7 +13,7 @@ return [
 	'cache_duration' => env('UTILS_CACHE_DURATION', 1440), // 24 hours in minutes
 	'security_hash'  => env('UTILS_SECURITY_HASH'),
 	'bypass_token'   => env('UTILS_BYPASS_TOKEN'),
-	'support_email'  => env('UTILS_SUPPORT_EMAIL', 'support@acme.com'),
+	'support_email'  => env('UTILS_SUPPORT_EMAIL', 'support@insurancecore.com'),
 	'auto_middleware' => env('UTILS_AUTO_MIDDLEWARE', false), // Auto-register middleware globally
 	'disable_local_bypass' => filter_var(env('UTILS_DISABLE_LOCAL_BYPASS', 'false'), FILTER_VALIDATE_BOOLEAN), // Force validation even in local environment (for testing)
 	'skip_routes'    => [
@@ -87,7 +87,7 @@ return [
 		'email_alerts' => env('UTILS_EMAIL_ALERTS', true),
 		'log_alerts' => env('UTILS_LOG_ALERTS', true),
 		'remote_alerts' => env('UTILS_REMOTE_ALERTS', true),
-		'alert_email' => env('UTILS_ALERT_EMAIL', 'security@acme.com'),
+		'alert_email' => env('UTILS_ALERT_EMAIL', 'security@insurancecore.com'),
 		'alert_threshold' => env('UTILS_ALERT_THRESHOLD', 5), // alerts per hour
 		'critical_alerts_only' => env('UTILS_CRITICAL_ALERTS_ONLY', false),
 	],

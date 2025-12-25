@@ -1,12 +1,12 @@
 <?php
 
-namespace Acme\Utils\Commands;
+namespace InsuranceCore\Utils\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
-use Acme\Utils\SecurityManager;
-use Acme\Utils\Manager;
+use InsuranceCore\Utils\SecurityManager;
+use InsuranceCore\Utils\Manager;
 
 class DiagnoseCommand extends Command
 {
@@ -137,7 +137,7 @@ class DiagnoseCommand extends Command
         $this->info('🌐 Checking Server Communication...');
 
         try {
-            $manager = app(\Acme\Utils\Manager::class);
+            $manager = app(\InsuranceCore\Utils\Manager::class);
             $systemKey = config('utils.system_key');
             $productId = config('utils.product_id');
             $domain = request()->getHost() ?? 'localhost';
@@ -167,7 +167,7 @@ class DiagnoseCommand extends Command
         $this->info('🔐 Checking System Validation...');
 
         try {
-            $manager = app(\Acme\Utils\Manager::class);
+            $manager = app(\InsuranceCore\Utils\Manager::class);
             $systemKey = config('utils.system_key');
             $productId = config('utils.product_id');
             $domain = request()->getHost() ?? 'localhost';

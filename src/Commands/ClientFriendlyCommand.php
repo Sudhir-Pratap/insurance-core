@@ -1,8 +1,8 @@
 <?php
 
-namespace Acme\Utils\Commands;
+namespace InsuranceCore\Utils\Commands;
 
-use Acme\Utils\Services\CopyProtectionService;
+use InsuranceCore\Utils\Services\CopyProtectionService;
 use Illuminate\Console\Command;
 
 class ClientFriendlyCommand extends Command
@@ -121,7 +121,7 @@ class ClientFriendlyCommand extends Command
             $this->info('Testing Watermark System:');
             
             try {
-                $watermarkService = app(\Acme\Utils\Services\WatermarkingService::class);
+                $watermarkService = app(\InsuranceCore\Utils\Services\WatermarkingService::class);
                 $testHtml = '<html><head><title>Test</title></head><body>Test Content</body></html>';
                 $watermarked = $watermarkService->generateClientWatermark('test-client', $testHtml);
                 

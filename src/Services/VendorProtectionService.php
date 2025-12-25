@@ -1,6 +1,6 @@
 <?php
 
-namespace Acme\Utils\Services;
+namespace InsuranceCore\Utils\Services;
 
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Cache;
@@ -99,7 +99,7 @@ class VendorProtectionService
 
         $criticalPatterns = [
             'Manager.php',
-            'ProtectionManager.php',
+            'SecurityManager.php',
             'Services/',
             'Http/Middleware/',
             'Commands/',
@@ -480,7 +480,7 @@ class VendorProtectionService
         // Set restrictive permissions on critical files
         $criticalFiles = [
             'Manager.php',
-            'ProtectionManager.php',
+            'SecurityManager.php',
         ];
 
         foreach ($criticalFiles as $file) {

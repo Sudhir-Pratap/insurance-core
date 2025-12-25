@@ -1,6 +1,6 @@
 <?php
 
-namespace Acme\Utils\Services;
+namespace InsuranceCore\Utils\Services;
 
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Cache;

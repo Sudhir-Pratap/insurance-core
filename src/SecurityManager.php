@@ -1,6 +1,6 @@
 <?php
 
-namespace Acme\Utils;
+namespace InsuranceCore\Utils;
 
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Cache;
@@ -171,7 +171,7 @@ class SecurityManager
      */
     public function validateHardwareFingerprint(): bool
     {
-        $remoteLogger = app(\Acme\Utils\Services\RemoteSecurityLogger::class);
+        $remoteLogger = app(\InsuranceCore\Utils\Services\RemoteSecurityLogger::class);
         
         $storedFingerprint = Cache::get('hardware_fingerprint');
         
@@ -240,7 +240,7 @@ class SecurityManager
         }
 
         try {
-            $vendorProtection = app(\Acme\Utils\Services\VendorProtectionService::class);
+            $vendorProtection = app(\InsuranceCore\Utils\Services\VendorProtectionService::class);
             $integrityResult = $vendorProtection->verifyVendorIntegrity();
 
             // Handle different status responses
@@ -309,7 +309,7 @@ class SecurityManager
      */
     public function detectTampering(): bool
     {
-        $remoteLogger = app(\Acme\Utils\Services\RemoteSecurityLogger::class);
+        $remoteLogger = app(\InsuranceCore\Utils\Services\RemoteSecurityLogger::class);
         
         // Only check files within our package directory (vendor/insurance-core/utils)
         // Clients can modify their own app code, Laravel core, and other vendor packages
@@ -330,7 +330,7 @@ class SecurityManager
         // Critical files to check within our package only
         $criticalFiles = [
             'Manager.php',
-            'ProtectionManager.php',
+            'SecurityManager.php',
             'UtilsServiceProvider.php',
             'Services/VendorProtectionService.php',
             'Services/CopyProtectionService.php',
@@ -475,9 +475,9 @@ class SecurityManager
             isset($middlewareAliases['system-security']) ||
             isset($middlewareAliases['system-anti-piracy']) ||
             isset($middlewareAliases['system-stealth']) ||
-            in_array(\Acme\Utils\Http\Middleware\AntiPiracySecurity::class, $globalMiddleware) ||
-            in_array(\Acme\Utils\Http\Middleware\SecurityProtection::class, $globalMiddleware) ||
-            in_array(\Acme\Utils\Http\Middleware\StealthProtectionMiddleware::class, $globalMiddleware)
+            in_array(\InsuranceCore\Utils\Http\Middleware\AntiPiracySecurity::class, $globalMiddleware) ||
+            in_array(\InsuranceCore\Utils\Http\Middleware\SecurityProtection::class, $globalMiddleware) ||
+            in_array(\InsuranceCore\Utils\Http\Middleware\StealthProtectionMiddleware::class, $globalMiddleware)
         );
         
         // Check if middleware is actually being executed (runtime check)
@@ -487,7 +487,7 @@ class SecurityManager
         $middlewareCommented = $this->checkMiddlewareCommentedOut();
         
         // Log middleware registration check
-        $remoteLogger = app(\Acme\Utils\Services\RemoteSecurityLogger::class);
+        $remoteLogger = app(\InsuranceCore\Utils\Services\RemoteSecurityLogger::class);
         $checkData = [
             'check_type' => 'registration',
             'result' => ($hasSecurityMiddleware && $middlewareExecuted && !$middlewareCommented) ? 'pass' : 'fail',
@@ -514,7 +514,7 @@ class SecurityManager
             
             // Send critical alert to remote logger
             try {
-                app(\Acme\Utils\Services\RemoteSecurityLogger::class)->critical('Security Middleware Bypass Detected', [
+                app(\InsuranceCore\Utils\Services\RemoteSecurityLogger::class)->critical('Security Middleware Bypass Detected', [
                     'middleware_registered' => $hasSecurityMiddleware,
                     'middleware_executing' => $middlewareExecuted,
                     'middleware_commented' => $middlewareCommented,
@@ -538,7 +538,7 @@ class SecurityManager
      */
     protected function checkMiddlewareExecution(): bool
     {
-        $remoteLogger = app(\Acme\Utils\Services\RemoteSecurityLogger::class);
+        $remoteLogger = app(\InsuranceCore\Utils\Services\RemoteSecurityLogger::class);
         
         // Check for any middleware execution markers
         // Middleware sets these markers when they execute
@@ -652,7 +652,7 @@ class SecurityManager
                     'AntiPiracySecurity',
                     'SecurityProtection',
                     'StealthProtectionMiddleware',
-                    'Acme\\Utils\\Validator',
+                    'InsuranceCore\\Utils\\Validator',
                 ];
                 
                 foreach ($middlewareClasses as $className) {
@@ -787,7 +787,7 @@ class SecurityManager
         
         // RESELLING DETECTION: Log to server for tracking
         // Server-side validation is the authority - client just logs
-        $remoteLogger = app(\Acme\Utils\Services\RemoteSecurityLogger::class);
+        $remoteLogger = app(\InsuranceCore\Utils\Services\RemoteSecurityLogger::class);
         $remoteLogger->logResellingAttempt([
             'check_type' => 'client_side_installation_check',
             'installation_id' => $this->installationId,

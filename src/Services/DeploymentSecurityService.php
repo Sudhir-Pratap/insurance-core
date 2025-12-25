@@ -1,6 +1,6 @@
 <?php
 
-namespace Acme\Utils\Services;
+namespace InsuranceCore\Utils\Services;
 
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Cache;
@@ -229,7 +229,7 @@ class DeploymentSecurityService
         $middlewareContent = <<<'PHP'
 <?php
 
-namespace Acme\Utils\Http\Middleware;
+namespace InsuranceCore\Utils\Http\Middleware;
 
 use Closure;
 

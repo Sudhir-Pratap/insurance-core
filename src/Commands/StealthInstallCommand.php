@@ -1,12 +1,12 @@
 <?php
 
-namespace Acme\Utils\Commands;
+namespace InsuranceCore\Utils\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Config;
-use Acme\Utils\Http\Middleware\StealthProtectionMiddleware;
-use Acme\Utils\Http\Middleware\AntiPiracySecurity;
-use Acme\Utils\Http\Middleware\SecurityProtection;
+use InsuranceCore\Utils\Http\Middleware\StealthProtectionMiddleware;
+use InsuranceCore\Utils\Http\Middleware\AntiPiracySecurity;
+use InsuranceCore\Utils\Http\Middleware\SecurityProtection;
 
 class StealthInstallCommand extends Command
 {

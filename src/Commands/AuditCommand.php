@@ -1,11 +1,11 @@
 <?php
 
-namespace Acme\Utils\Commands;
+namespace InsuranceCore\Utils\Commands;
 
-use Acme\Utils\Services\CodeProtectionService;
-use Acme\Utils\Services\DeploymentSecurityService;
-use Acme\Utils\Services\EnvironmentHardeningService;
-use Acme\Utils\Services\SecurityMonitoringService;
+use InsuranceCore\Utils\Services\CodeProtectionService;
+use InsuranceCore\Utils\Services\DeploymentSecurityService;
+use InsuranceCore\Utils\Services\EnvironmentHardeningService;
+use InsuranceCore\Utils\Services\SecurityMonitoringService;
 use Illuminate\Console\Command;
 
 class AuditCommand extends Command
@@ -194,7 +194,7 @@ class AuditCommand extends Command
 
         // Check vendor integrity
         try {
-            $vendorProtection = app(\Acme\Utils\Services\VendorProtectionService::class);
+            $vendorProtection = app(\InsuranceCore\Utils\Services\VendorProtectionService::class);
             $integrityResult = $vendorProtection->verifyVendorIntegrity();
 
             if ($integrityResult['status'] === 'violations_detected') {
@@ -357,7 +357,7 @@ class AuditCommand extends Command
     private function enableVendorProtection(): void
     {
         config(['utils.vendor_protection.enabled' => true]);
-        app(\Acme\Utils\Services\VendorProtectionService::class)->protectVendorIntegrity();
+        app(\InsuranceCore\Utils\Services\VendorProtectionService::class)->protectVendorIntegrity();
     }
 
     /**
@@ -365,7 +365,7 @@ class AuditCommand extends Command
      */
     private function createVendorBaseline(): void
     {
-        $vendorProtection = app(\Acme\Utils\Services\VendorProtectionService::class);
+        $vendorProtection = app(\InsuranceCore\Utils\Services\VendorProtectionService::class);
         $vendorProtection->protectVendorIntegrity();
     }
 

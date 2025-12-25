@@ -3,7 +3,7 @@
 ## Problem
 If you're seeing the error:
 ```
-Cannot declare class InsuranceCore\Helpers\Commands\OptimizeCommand, because the name is already in use
+Cannot declare class InsuranceCore\Utils\Commands\OptimizeCommand, because the name is already in use
 ```
 
 This happens when the consuming Laravel application has cached autoload files that still reference the old `ObfuscateCodeCommand.php` file.

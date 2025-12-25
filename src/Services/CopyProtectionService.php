@@ -1,6 +1,6 @@
 <?php
 
-namespace Acme\Utils\Services;
+namespace InsuranceCore\Utils\Services;
 
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Cache;
@@ -51,7 +51,7 @@ class CopyProtectionService
         // Allow max 2 domains per system key
         $maxAllowed = config('utils.anti_reselling.max_domains', 2);
         if (count($domains) > $maxAllowed) {
-            app(\Acme\Utils\Services\RemoteSecurityLogger::class)->critical('Multiple domains detected', [
+            app(\InsuranceCore\Utils\Services\RemoteSecurityLogger::class)->critical('Multiple domains detected', [
                 'domains' => $domains,
                 'system_key' => config('utils.system_key'),
                 'excess_count' => count($domains) - $maxAllowed,
@@ -125,7 +125,7 @@ class CopyProtectionService
         $score = 0;
         
         // Check if application has been downloaded/moved recently
-        $installFingerprint = app(\Acme\Utils\Manager::class)->generateHardwareFingerprint();
+        $installFingerprint = app(\InsuranceCore\Utils\Manager::class)->generateHardwareFingerprint();
         $storedFingerprint = Cache::get('original_fingerprint_' . md5(config('utils.system_key')));
         
         if (!$storedFingerprint) {
@@ -138,7 +138,7 @@ class CopyProtectionService
             if ($percent < 85) {
                 $score += 40; // High suspicion - significant hardware change
                 
-                app(\Acme\Utils\Services\RemoteSecurityLogger::class)->warning('Significant hardware fingerprint change', [
+                app(\InsuranceCore\Utils\Services\RemoteSecurityLogger::class)->warning('Significant hardware fingerprint change', [
                     'old_fingerprint' => substr($storedFingerprint, 0, 32) . '...',
                     'new_fingerprint' => substr($installFingerprint, 0, 32) . '...',
                     'similarity' => $percent,
@@ -181,7 +181,7 @@ class CopyProtectionService
                     } elseif ($storedHash !== $currentHash) {
                         $score += 25; // High suspicion - file modification
                         
-                        app(\Acme\Utils\Services\RemoteSecurityLogger::class)->critical('Unauthorized file modification detected', [
+                        app(\InsuranceCore\Utils\Services\RemoteSecurityLogger::class)->critical('Unauthorized file modification detected', [
                             'file' => $filePath,
                             'old_hash' => $storedHash,
                             'new_hash' => $currentHash
@@ -279,7 +279,7 @@ class CopyProtectionService
     public function handlePotentiallySuspiciousActivity(array $indicators, int $score): void
     {
         // Record incident
-        app(\Acme\Utils\Services\RemoteSecurityLogger::class)->alert('Potentially suspicious activity detected', [
+        app(\InsuranceCore\Utils\Services\RemoteSecurityLogger::class)->alert('Potentially suspicious activity detected', [
             'system_key' => config('utils.system_key'),
             'client_id' => config('utils.client_id'),
             'domain' => request()->getHost(),
@@ -318,7 +318,7 @@ class CopyProtectionService
             ]);
 
         } catch (\Exception $e) {
-            app(\Acme\Utils\Services\RemoteSecurityLogger::class)->error('Failed to report suspicious activity', [
+            app(\InsuranceCore\Utils\Services\RemoteSecurityLogger::class)->error('Failed to report suspicious activity', [
                 'error' => $e->getMessage(),
             ]);
         }

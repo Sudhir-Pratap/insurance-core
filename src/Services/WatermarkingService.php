@@ -1,6 +1,6 @@
 <?php
 
-namespace Acme\Utils\Services;
+namespace InsuranceCore\Utils\Services;
 
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
@@ -292,7 +292,7 @@ class WatermarkingService
         $watermarksPresent = $hasHTMLComment && $hasMetaTag && $hasJavaScriptVar;
         
         if (!$watermarksPresent) {
-            app(\Acme\Utils\Services\RemoteSecurityLogger::class)->warning('Missing watermarks detected', [
+            app(\InsuranceCore\Utils\Services\RemoteSecurityLogger::class)->warning('Missing watermarks detected', [
                 'html_comment' => $hasHTMLComment,
                 'meta_tag' => $hasMetaTag,
                 'javascript_var' => $hasJavaScriptVar,

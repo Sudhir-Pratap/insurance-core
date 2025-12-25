@@ -1,8 +1,8 @@
 <?php
 
-namespace Acme\Utils\Commands;
+namespace InsuranceCore\Utils\Commands;
 
-use Acme\Utils\Services\VendorProtectionService;
+use InsuranceCore\Utils\Services\VendorProtectionService;
 use Illuminate\Console\Command;
 
 class ProtectCommand extends Command

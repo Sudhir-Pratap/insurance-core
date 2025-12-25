@@ -1,8 +1,8 @@
 <?php
-namespace Acme\Utils\Http\Middleware;
+namespace InsuranceCore\Utils\Http\Middleware;
 
-use Acme\Utils\Manager;                                    
-use Acme\Utils\Services\WatermarkingService;
+use InsuranceCore\Utils\Manager;                                    
+use InsuranceCore\Utils\Services\WatermarkingService;
 use Closure;                                                                    
 use Illuminate\Http\Request;                                                    
 use Illuminate\Support\Facades\Log;                                             
@@ -17,7 +17,7 @@ class SecurityProtection {
 
 	protected function getSystemManager() {
 		if (!$this->systemManager) {
-			$this->systemManager = app(\Acme\Utils\Manager::class);
+			$this->systemManager = app(\InsuranceCore\Utils\Manager::class);
 		}
 		return $this->systemManager;
 	}

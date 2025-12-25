@@ -1,4 +1,4 @@
-# 🛠️ Acme Utils Package
+# 🛠️ Insurance Core Utils Package
 
 Utility helpers package for Laravel applications.
 
@@ -18,10 +18,10 @@ A comprehensive collection of utility helpers and tools for Laravel applications
 
 ```bash
 # Install package
-composer require acme/utils
+composer require insurance-core/helpers
 
 # Publish configuration
-php artisan vendor:publish --provider="Acme\Utils\UtilsServiceProvider" --tag=config
+php artisan vendor:publish --provider="InsuranceCore\Utils\UtilsServiceProvider" --tag=config
 
 # Check system status  
 php artisan utils:info
@@ -117,7 +117,7 @@ This package includes built-in security features:
 
 ## 🤝 Support
 
-For support, email support@acme.com or visit https://acme.com
+For support, email support@insurancecore.com or visit https://github.com/Sudhir-Pratap/insurance-core
 
 ## 📄 License
 

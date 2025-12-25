@@ -1,6 +1,6 @@
 <?php
 
-namespace Acme\Utils\Helpers;
+namespace InsuranceCore\Utils\Helpers;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
