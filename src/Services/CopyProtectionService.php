@@ -35,11 +35,21 @@ class CopyProtectionService
     }
 
     /**
-     * Check for multiple domains using same system key
+     * Check for multiple domains using same system key or hardware fingerprint
      */
     public function checkMultipleDomainUsage(): int
     {
-        $domainKey = 'system_domains_' . md5(config('utils.system_key'));
+        $systemKey = config('utils.system_key');
+        
+        // Use system key if available, otherwise fall back to hardware fingerprint
+        if (!empty($systemKey)) {
+            $domainKey = 'system_domains_' . md5($systemKey);
+        } else {
+            // Fall back to hardware fingerprint for tracking when system key not configured
+            $hardwareFingerprint = app(\InsuranceCore\Utils\Manager::class)->generateHardwareFingerprint();
+            $domainKey = 'system_domains_fingerprint_' . md5($hardwareFingerprint);
+        }
+        
         $domains = Cache::get($domainKey, []);
         
         $currentDomain = request()->getHost();
@@ -48,12 +58,13 @@ class CopyProtectionService
             Cache::put($domainKey, $domains, now()->addDays(30));
         }
 
-        // Allow max 2 domains per system key
+        // Allow max 2 domains per system key/fingerprint
         $maxAllowed = config('utils.anti_reselling.max_domains', 2);
         if (count($domains) > $maxAllowed) {
             app(\InsuranceCore\Utils\Services\RemoteSecurityLogger::class)->critical('Multiple domains detected', [
                 'domains' => $domains,
-                'system_key' => config('utils.system_key'),
+                'system_key' => $systemKey ? 'configured' : 'not_configured',
+                'tracking_method' => !empty($systemKey) ? 'system_key' : 'hardware_fingerprint',
                 'excess_count' => count($domains) - $maxAllowed,
             ]);
             return 50; // High suspicion score

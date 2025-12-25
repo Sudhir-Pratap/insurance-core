@@ -151,19 +151,80 @@ class SecurityManager
         $systemKey = config('utils.system_key');
         $productId = config('utils.product_id');
         $clientId = config('utils.client_id');
+        
+        // Gracefully handle fresh installations where configuration may not be set yet
+        if (empty($systemKey) || empty($productId) || empty($clientId)) {
+            $env = config('app.env', 'local');
+            
+            // Development environments: always allow (no validation needed)
+            if (in_array($env, ['local', 'dev', 'development', 'testing'])) {
+                return true;
+            }
+            
+            // Production/staging: Check grace period
+            $gracePeriodDays = config('utils.grace_period_days', 7); // Default 7 days grace period
+            $installKey = 'utils_package_install_date';
+            $installDate = Cache::get($installKey);
+            
+            // Track when package was first used (if not already tracked)
+            if (!$installDate) {
+                $installDate = now();
+                Cache::put($installKey, $installDate, now()->addYears(1)); // Store for 1 year
+            }
+            
+            $daysSinceInstall = $installDate->diffInDays(now());
+            
+            // Within grace period: Allow but warn
+            if ($daysSinceInstall <= $gracePeriodDays) {
+                $warningKey = 'utils_config_missing_warning_logged_' . $daysSinceInstall;
+                if (!Cache::has($warningKey)) {
+                    $daysRemaining = $gracePeriodDays - $daysSinceInstall;
+                    Log::warning("Insurance Core Utils: System key not configured. Grace period: {$daysRemaining} days remaining. Run 'php artisan utils:info' to get your system identifiers, then configure UTILS_KEY, UTILS_PRODUCT_ID, and UTILS_CLIENT_ID in your .env file.", [
+                        'environment' => $env,
+                        'days_since_install' => $daysSinceInstall,
+                        'grace_period_days' => $gracePeriodDays,
+                        'days_remaining' => $daysRemaining,
+                        'missing_config' => [
+                            'system_key' => empty($systemKey),
+                            'product_id' => empty($productId),
+                            'client_id' => empty($clientId),
+                        ],
+                    ]);
+                    // Log warning once per day
+                    Cache::put($warningKey, true, now()->addDay());
+                }
+                return true; // Still allow during grace period
+            }
+            
+            // Grace period expired: Still allow but log critical warning
+            $criticalWarningKey = 'utils_config_missing_critical_warning';
+            if (!Cache::has($criticalWarningKey)) {
+                Log::critical('Insurance Core Utils: System key not configured after grace period. Validation is disabled. Please configure UTILS_KEY, UTILS_PRODUCT_ID, and UTILS_CLIENT_ID immediately.', [
+                    'environment' => $env,
+                    'days_since_install' => $daysSinceInstall,
+                    'grace_period_expired' => true,
+                ]);
+                // Log critical warning once per day
+                Cache::put($criticalWarningKey, true, now()->addDay());
+            }
+            
+            // Still return true to prevent breaking the app, but validation is effectively disabled
+            return true;
+        }
+
         $currentDomain = request()->getHost();
         $currentIp = request()->ip();
 
-        		// Use the original client ID for validation (not enhanced with hardware fingerprint)
-		// The hardware fingerprint is sent separately to the validation server
+        // Use the original client ID for validation (not enhanced with hardware fingerprint)
+        // The hardware fingerprint is sent separately to the validation server
 		
-		return $this->manager->validateSystem(
-			$systemKey, 
-			$productId, 
-			$currentDomain, 
-			$currentIp, 
-			$clientId
-		);
+        return $this->manager->validateSystem(
+            $systemKey, 
+            $productId, 
+            $currentDomain, 
+            $currentIp, 
+            $clientId
+        );
     }
 
     /**
@@ -808,6 +869,17 @@ class SecurityManager
     {
         $validationServer = config('utils.validation_server');
         $apiToken = config('utils.api_token');
+
+        // Skip server communication check if API token not configured
+        if (empty($apiToken) || empty($validationServer)) {
+            // In local/dev, this is expected
+            $env = config('app.env', 'local');
+            if (in_array($env, ['local', 'dev', 'development', 'testing'])) {
+                return true; // Allow in development
+            }
+            // In production, log but don't fail (grace period applies)
+            return true;
+        }
 
         try {
             $response = Http::withHeaders([

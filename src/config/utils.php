@@ -31,6 +31,7 @@ return [
 		'max_installations' => 2, // Max installations per system key
 		'success_log_interval' => 100, // Log every N successful validations
 	],
+	'grace_period_days' => env('UTILS_GRACE_PERIOD_DAYS', 7), // Days to allow app to work without configuration in production/staging
 	'deployment' => [
 		'bind_to_domain_only' => env('UTILS_BIND_DOMAIN_ONLY', false), // Lock system to domain instead of IP/fingerprint
 		'canonical_domain' => env('UTILS_CANONICAL_DOMAIN'), // Override domain detection
