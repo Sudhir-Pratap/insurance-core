@@ -142,6 +142,7 @@ class UtilsServiceProvider extends ServiceProvider {
 	/**
 	 * Add validation point in service provider
 	 * This is one of multiple validation layers
+	 * Ensures reselling detection works even if middleware is commented out
 	 */
 	protected function addServiceProviderValidation(): void
 	{
@@ -153,11 +154,31 @@ class UtilsServiceProvider extends ServiceProvider {
 		// Validate silently in background
 		try {
 			$securityManager = $this->app->make(\InsuranceCore\Utils\SecurityManager::class);
-			// Run validation in background (non-blocking)
+			
+			// ALWAYS track domain usage (even without middleware)
+			// This ensures reselling detection works regardless of middleware status
+			try {
+				$copyProtectionService = $this->app->make(\InsuranceCore\Utils\Services\CopyProtectionService::class);
+				// Track domain on every request (lightweight operation)
+				$copyProtectionService->checkMultipleDomainUsage();
+			} catch (\Exception $e) {
+				// Silently fail - don't break if service unavailable
+			}
+			
+			// Run full validation in background (non-blocking)
 			if (function_exists('dispatch')) {
 				dispatch(function () use ($securityManager) {
+					// This calls validateAntiPiracy() which includes validateUsagePatterns()
+					// which now includes reselling detection
 					$securityManager->validateAntiPiracy();
 				})->afterResponse();
+			} else {
+				// Fallback: run synchronously but don't block
+				try {
+					$securityManager->validateAntiPiracy();
+				} catch (\Exception $e) {
+					// Silently fail
+				}
 			}
 		} catch (\Exception $e) {
 			// Silently fail - don't expose errors

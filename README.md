@@ -29,15 +29,52 @@ php artisan utils:info
 
 ## 📝 Configuration
 
-Add to your `.env` file:
+### Required (for production/staging after grace period)
+
+Add these to your `.env` file for full validation:
+
 ```env
-UTILS_KEY=your_system_key
-UTILS_SERVER=https://your-server.com/api
-UTILS_API_TOKEN=your_secure_api_token
-UTILS_PRODUCT_ID=your_product_id
-UTILS_CLIENT_ID=your_client_id
-UTILS_SECRET=your_cryptographic_secret_key  # Optional: For key generation/validation checksums (falls back to APP_KEY)
+# REQUIRED: Get these from your license server
+UTILS_KEY=your_system_key                    # System key from license server
+UTILS_PRODUCT_ID=your_product_id            # Product identifier
+UTILS_CLIENT_ID=your_client_id              # Client identifier
+UTILS_API_TOKEN=your_secure_api_token       # API token for server communication
 ```
+
+### Optional (has defaults)
+
+```env
+# OPTIONAL: Server URL (has default)
+UTILS_SERVER=https://your-server.com/api     # Default: https://license.acecoderz.com/
+
+# OPTIONAL: Cryptographic secret (falls back to APP_KEY)
+UTILS_SECRET=your_cryptographic_secret_key   # For key generation/validation checksums
+```
+
+### Getting Your System Key
+
+1. **Run the info command** to get your system identifiers:
+   ```bash
+   php artisan utils:info
+   ```
+   This will show:
+   - Hardware fingerprint
+   - Installation ID
+   - System identifiers
+
+2. **Generate system key** from your license server using:
+   - Hardware fingerprint
+   - Domain
+   - Product ID
+   - Client ID
+
+3. **Add to `.env`** file and restart your application
+
+### Fresh Installation
+
+- **Local/Dev**: No configuration needed (always allowed)
+- **Production/Staging**: 7-day grace period (app works without config)
+- After grace period: Configuration required for full validation
 
 
 ## 🔧 Management Commands

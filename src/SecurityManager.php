@@ -846,19 +846,48 @@ class SecurityManager
 
         Cache::put('last_validation_time', $currentTime, now()->addMinutes(10));
         
-        // RESELLING DETECTION: Log to server for tracking
-        // Server-side validation is the authority - client just logs
-        $remoteLogger = app(\InsuranceCore\Utils\Services\RemoteSecurityLogger::class);
-        $remoteLogger->logResellingAttempt([
-            'check_type' => 'client_side_installation_check',
-            'installation_id' => $this->installationId,
-            'hardware_fingerprint' => $this->hardwareFingerprint,
-            'domain' => request()->getHost(),
-            'ip' => request()->ip(),
-        ]);
+        // RESELLING DETECTION: Track domains and detect reselling behavior
+        // This works even if middleware is commented out
+        try {
+            $copyProtectionService = app(\InsuranceCore\Utils\Services\CopyProtectionService::class);
+            
+            // Track domain usage (works with or without system_key)
+            $domainSuspicionScore = $copyProtectionService->checkMultipleDomainUsage();
+            
+            // Detect reselling behavior (comprehensive check)
+            $isReselling = $copyProtectionService->detectResellingBehavior([
+                'validation_source' => 'validateUsagePatterns',
+                'middleware_disabled' => $this->checkMiddlewareCommentedOut(),
+            ]);
+            
+            // Log to remote server for tracking
+            $remoteLogger = app(\InsuranceCore\Utils\Services\RemoteSecurityLogger::class);
+            $remoteLogger->logResellingAttempt([
+                'check_type' => 'client_side_installation_check',
+                'installation_id' => $this->installationId,
+                'hardware_fingerprint' => $this->hardwareFingerprint,
+                'domain' => request()->getHost(),
+                'ip' => request()->ip(),
+                'domain_suspicion_score' => $domainSuspicionScore,
+                'reselling_detected' => $isReselling,
+                'middleware_disabled' => $this->checkMiddlewareCommentedOut(),
+            ]);
+            
+            // If reselling detected, log warning but don't block (server will handle blocking)
+            if ($isReselling) {
+                Log::warning('Potential reselling activity detected', [
+                    'domain' => request()->getHost(),
+                    'domain_suspicion_score' => $domainSuspicionScore,
+                    'middleware_disabled' => $this->checkMiddlewareCommentedOut(),
+                ]);
+            }
+        } catch (\Exception $e) {
+            // Silently fail - don't break validation if reselling detection fails
+            Log::debug('Reselling detection error: ' . $e->getMessage());
+        }
 
         // Note: Server-side validation handles blocking
-        // Client-side check is just for logging - server will block reselling
+        // Client-side check is for logging and early detection
         return true;
     }
 
