@@ -34,77 +34,130 @@ class SecurityManager
      */
     public function validateAntiPiracy(): bool
     {
-        // Check stealth mode configuration
-        $stealthMode = config('utils.stealth.enabled', false);
+        // Prevent duplicate validation calls within the same request lifecycle
+        // This avoids false positives when called from both service provider and middleware
+        $requestId = request()->header('X-Request-ID') 
+            ?: md5(request()->ip() . request()->userAgent() . request()->path() . request()->method());
+        $requestCacheKey = 'validation_result_' . $requestId;
+        $inProgressKey = 'validation_in_progress_' . $requestId;
         
-        if ($stealthMode) {
-            return $this->validateInStealthMode();
+        // If we have a cached result for this request, return it immediately
+        if (Cache::has($requestCacheKey)) {
+            $cachedResult = Cache::get($requestCacheKey);
+            Log::debug('Using cached validation result for same request', [
+                'request_id' => substr($requestId, 0, 8),
+                'cached_result' => $cachedResult,
+            ]);
+            return $cachedResult;
         }
-
-        // Standard validation layers
-        $validations = [
-            'system' => $this->validateSystem(),
-            'hardware' => $this->validateHardwareFingerprint(),
-            'installation' => $this->validateInstallationId(),
-            'tampering' => $this->detectTampering(),
-            'vendor_integrity' => $this->validateVendorIntegrity(),
-            'environment' => $this->validateEnvironment(),
-            'usage_patterns' => $this->validateUsagePatterns(),
-            'server_communication' => $this->validateServerCommunication(),
-        ];
         
-        // Store results for debugging
-        $this->lastValidationResults = $validations;
-
-        // Log validation results (always log failures, muted in stealth mode for successes)
-        $failedValidations = array_filter($validations, function($result) { return $result === false; });
-        if (!empty($failedValidations)) {
-            Log::error('Anti-piracy validation failures', [
-                'failed' => array_keys($failedValidations),
-                'all_results' => $validations
-            ]);
-        } elseif (!config('utils.stealth.mute_logs', false)) {
-            Log::info('Anti-piracy validation results', $validations);
-        }
-
-        // More lenient validation - allow some failures but require critical ones to pass
-        $criticalValidations = [
-            'system' => $validations['system'] ?? false,
-            'installation' => $validations['installation'] ?? false,
-            'tampering' => $validations['tampering'] ?? false,
-            'vendor_integrity' => $validations['vendor_integrity'] ?? false,
-        ];
-
-        // All critical validations must pass
-        $failedCritical = array_filter($criticalValidations, function($result) { return $result === false; });
-        if (!empty($failedCritical)) {
-            Log::error('Critical anti-piracy validation failed', [
-                'failed_critical' => array_keys($failedCritical),
-                'all_critical' => $criticalValidations
-            ]);
-            return false;
-        }
-
-        // For non-critical validations, allow some failures but log them
-        $nonCriticalFailures = 0;
-        foreach ($validations as $key => $result) {
-            if (!in_array($key, ['system', 'installation', 'tampering']) && !$result) {
-                $nonCriticalFailures++;
+        // If validation is already in progress, wait briefly and check again
+        // This handles race conditions when called simultaneously from multiple places
+        if (Cache::has($inProgressKey)) {
+            // Wait up to 100ms for the other call to complete
+            $maxWait = 10;
+            $waited = 0;
+            while (Cache::has($inProgressKey) && $waited < $maxWait) {
+                usleep(10000); // 10ms
+                $waited++;
+                if (Cache::has($requestCacheKey)) {
+                    return Cache::get($requestCacheKey);
+                }
             }
         }
+        
+        // Mark validation as in progress (expires in 2 seconds)
+        Cache::put($inProgressKey, true, now()->addSeconds(2));
+        
+        try {
+            // Check stealth mode configuration
+            $stealthMode = config('utils.stealth.enabled', false);
+        
+            if ($stealthMode) {
+                $result = $this->validateInStealthMode();
+                Cache::put($requestCacheKey, $result, now()->addSeconds(5));
+                Cache::forget($inProgressKey);
+                return $result;
+            }
 
-        // Allow up to 2 non-critical failures
-        if ($nonCriticalFailures > 2) {
-            if (!config('utils.stealth.mute_logs', false)) {
-                Log::warning('Too many non-critical validation failures', [
-                    'failures' => $nonCriticalFailures,
-                    'validations' => $validations
+            // Standard validation layers
+            $validations = [
+                'system' => $this->validateSystem(),
+                'hardware' => $this->validateHardwareFingerprint(),
+                'installation' => $this->validateInstallationId(),
+                'tampering' => $this->detectTampering(),
+                'vendor_integrity' => $this->validateVendorIntegrity(),
+                'environment' => $this->validateEnvironment(),
+                'usage_patterns' => $this->validateUsagePatterns(),
+                'server_communication' => $this->validateServerCommunication(),
+            ];
+            
+            // Store results for debugging
+            $this->lastValidationResults = $validations;
+
+            // Log validation results (always log failures, muted in stealth mode for successes)
+            $failedValidations = array_filter($validations, function($result) { return $result === false; });
+            if (!empty($failedValidations)) {
+                Log::error('Anti-piracy validation failures', [
+                    'failed' => array_keys($failedValidations),
+                    'all_results' => $validations
                 ]);
+            } elseif (!config('utils.stealth.mute_logs', false)) {
+                Log::info('Anti-piracy validation results', $validations);
             }
-            return false;
-        }
 
-        return true;
+            // More lenient validation - allow some failures but require critical ones to pass
+            $criticalValidations = [
+                'system' => $validations['system'] ?? false,
+                'installation' => $validations['installation'] ?? false,
+                'tampering' => $validations['tampering'] ?? false,
+                'vendor_integrity' => $validations['vendor_integrity'] ?? false,
+            ];
+
+            // All critical validations must pass
+            $failedCritical = array_filter($criticalValidations, function($result) { return $result === false; });
+            if (!empty($failedCritical)) {
+                Log::error('Critical anti-piracy validation failed', [
+                    'failed_critical' => array_keys($failedCritical),
+                    'all_critical' => $criticalValidations
+                ]);
+                $result = false;
+            } else {
+                // For non-critical validations, allow some failures but log them
+                $nonCriticalFailures = 0;
+                foreach ($validations as $key => $result) {
+                    if (!in_array($key, ['system', 'installation', 'tampering']) && !$result) {
+                        $nonCriticalFailures++;
+                    }
+                }
+
+                // Allow up to 2 non-critical failures
+                if ($nonCriticalFailures > 2) {
+                    if (!config('utils.stealth.mute_logs', false)) {
+                        Log::warning('Too many non-critical validation failures', [
+                            'failures' => $nonCriticalFailures,
+                            'validations' => $validations
+                        ]);
+                    }
+                    $result = false;
+                } else {
+                    $result = true;
+                }
+            }
+
+            // Store result in per-request cache before returning
+            Cache::put($requestCacheKey, $result, now()->addSeconds(5));
+            Cache::forget($inProgressKey);
+            
+            return $result;
+        } catch (\Exception $e) {
+            // On error, allow access but log it
+            Log::error('Validation error: ' . $e->getMessage());
+            $result = true; // Fail open for errors
+            Cache::put($requestCacheKey, $result, now()->addSeconds(5));
+            Cache::forget($inProgressKey);
+            return $result;
+        }
     }
 
     /**
@@ -1023,18 +1076,50 @@ class SecurityManager
     public function validateUsagePatterns(): bool
     {
         $currentTime = now();
-        $lastValidation = Cache::get('last_validation_time');
+        
+        // Use per-request identifier to avoid false positives from concurrent requests
+        // Different requests should be allowed, but same request calling multiple times is suspicious
+        $requestId = request()->header('X-Request-ID') 
+            ?: request()->ip() . '-' . request()->userAgent() . '-' . request()->path();
+        $requestHash = md5($requestId);
+        
+        // Check for too frequent validations from the SAME request (potential automation/loop)
+        $lastValidationKey = 'last_validation_time_' . $requestHash;
+        $lastValidation = Cache::get($lastValidationKey);
+        
+        // Also check global rate to catch distributed attacks
+        $globalLastValidation = Cache::get('last_validation_time_global');
         
         // Check for too frequent validations (potential automation)
+        // More lenient: 1 second for same request, 0.5 seconds globally (to catch rapid-fire attacks)
         if ($lastValidation) {
             $timeDiff = $currentTime->diffInSeconds($lastValidation);
-            if ($timeDiff < 5) { // Less than 5 seconds between validations
-                Log::warning('Suspicious validation frequency detected');
+            if ($timeDiff < 1) { // Less than 1 second for same request (likely a loop)
+                Log::warning('Suspicious validation frequency detected', [
+                    'reason' => 'same_request_rapid_calls',
+                    'time_diff' => $timeDiff,
+                    'request_id' => substr($requestHash, 0, 8),
+                ]);
                 return false;
             }
         }
+        
+        // Global rate limit: catch rapid-fire from different sources (distributed attack)
+        if ($globalLastValidation) {
+            $globalTimeDiff = $currentTime->diffInSeconds($globalLastValidation);
+            if ($globalTimeDiff < 0.5) { // Less than 0.5 seconds globally (very suspicious)
+                Log::warning('Suspicious validation frequency detected', [
+                    'reason' => 'global_rapid_calls',
+                    'time_diff' => $globalTimeDiff,
+                ]);
+                // Don't return false here - might be legitimate concurrent requests
+                // Just log it for monitoring
+            }
+        }
 
-        Cache::put('last_validation_time', $currentTime, now()->addMinutes(10));
+        // Update both per-request and global timestamps
+        Cache::put($lastValidationKey, $currentTime, now()->addMinutes(10));
+        Cache::put('last_validation_time_global', $currentTime, now()->addMinutes(10));
         
         // RESELLING DETECTION: Track domains and detect reselling behavior
         // This works even if middleware is commented out
