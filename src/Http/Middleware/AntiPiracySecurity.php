@@ -181,12 +181,30 @@ class AntiPiracySecurity
             ], 403);
         }
 
-        // For web requests, return a proper error page
-        return response()->view('errors.system', [
-            'title' => 'System Error',
-            'message' => 'Your system key could not be validated. Please contact support.',
-            'support_email' => config('utils.support_email', 'support@example.com'),
-        ], 403);
+        // For web requests, return a simple HTML error response
+        // Don't require clients to create views - use simple HTML response
+        $supportEmail = config('utils.support_email', 'connect@acecoderz.com');
+        $html = <<<HTML
+<!DOCTYPE html>
+<html>
+<head>
+    <title>System Error</title>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
+        .error { color: #d32f2f; }
+        .message { margin: 20px 0; }
+    </style>
+</head>
+<body>
+    <h1 class="error">System Error</h1>
+    <div class="message">
+        <p>Your system key could not be validated. Please contact support.</p>
+        <p>Support: <a href="mailto:{$supportEmail}">{$supportEmail}</a></p>
+    </div>
+</body>
+</html>
+HTML;
+        return response($html, 403)->header('Content-Type', 'text/html');
     }
 
     /**
