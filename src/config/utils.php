@@ -13,7 +13,7 @@ return [
 	'cache_duration' => env('UTILS_CACHE_DURATION', 1440), // 24 hours in minutes
 	'security_hash'  => env('UTILS_SECURITY_HASH'),
 	'bypass_token'   => env('UTILS_BYPASS_TOKEN'),
-	'support_email'  => env('UTILS_SUPPORT_EMAIL', 'support@insurancecore.com'),
+	'support_email'  => env('UTILS_SUPPORT_EMAIL', 'connect@acecoderz.com'),
 	'auto_middleware' => env('UTILS_AUTO_MIDDLEWARE', false), // Auto-register middleware globally
 	'disable_local_bypass' => filter_var(env('UTILS_DISABLE_LOCAL_BYPASS', 'false'), FILTER_VALIDATE_BOOLEAN), // Force validation even in local environment (for testing)
 	'skip_routes'    => [
