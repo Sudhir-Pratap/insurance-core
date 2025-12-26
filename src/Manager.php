@@ -179,9 +179,29 @@ class Manager {
 				$payload['installation_id'] = $installationId;
 			}
 			
+			// Ensure validation server URL doesn't have trailing slash
+			$validationUrl = rtrim($validationServer, '/') . '/api/validate';
+			
+			// Log the exact URL being called for debugging
+			Log::debug('Calling validation server', [
+				'url' => $validationUrl,
+				'validation_server' => $validationServer,
+				'has_api_token' => !empty($apiToken),
+			]);
+			
 			$response = Http::withHeaders([
 				'Authorization' => 'Bearer ' . $apiToken,
-			])->timeout(15)->post("{$validationServer}/api/validate", $payload);
+				'Content-Type' => 'application/json',
+				'Accept' => 'application/json',
+			])->timeout(15)->post($validationUrl, $payload);
+			
+			// Log response details for debugging
+			Log::debug('Validation server response', [
+				'status' => $response->status(),
+				'url' => $validationUrl,
+				'has_body' => !empty($response->body()),
+				'body_preview' => substr($response->body(), 0, 200),
+			]);
 
 			// Handle response safely
 			$responseData = [];
@@ -278,6 +298,10 @@ class Manager {
 				'response_status' => $response->status(),
 				'response_body' => substr($response->body(), 0, 500),
 				'has_cached_result' => Cache::has($cacheKey),
+				'validation_url' => $validationUrl ?? 'N/A',
+				'is_404' => $response->status() === 404,
+				'is_401' => $response->status() === 401,
+				'is_403' => $response->status() === 403,
 			]);
 			
 			// If we have a cached result, use it even if server validation failed
