@@ -16,6 +16,8 @@ use InsuranceCore\Utils\Commands\OptimizeCommand;
 use InsuranceCore\Utils\Http\Middleware\SecurityProtection;
 use InsuranceCore\Utils\Http\Middleware\AntiPiracySecurity;
 use InsuranceCore\Utils\Http\Middleware\StealthProtectionMiddleware;
+use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Cache;
 use InsuranceCore\Utils\Services\BackgroundValidator;
 use InsuranceCore\Utils\Services\CopyProtectionService;
 use InsuranceCore\Utils\Services\WatermarkingService;
@@ -112,9 +114,6 @@ class UtilsServiceProvider extends ServiceProvider {
 		$this->publishes([
 			__DIR__ . '/config/utils.php' => config_path('utils.php'),
 		], 'config');
-		
-		// Add validation point in service provider boot
-		$this->addServiceProviderValidation();
 
 		// Publish migrations
 		$this->publishes([
@@ -135,7 +134,7 @@ class UtilsServiceProvider extends ServiceProvider {
 			}
 		}
 		
-		// Add validation point in service provider boot
+		// Add validation point in service provider boot (only once)
 		$this->addServiceProviderValidation();
 	}
 	
@@ -165,6 +164,14 @@ class UtilsServiceProvider extends ServiceProvider {
 				// Silently fail - don't break if service unavailable
 			}
 			
+			// PHASE 2: Real-time vendor file monitoring (lightweight, cached)
+			// Check critical vendor files on every request (non-blocking)
+			try {
+				$this->performLightweightVendorCheck();
+			} catch (\Exception $e) {
+				// Silently fail - don't break if check fails
+			}
+			
 			// Run full validation in background (non-blocking)
 			if (function_exists('dispatch')) {
 				dispatch(function () use ($securityManager) {
@@ -182,6 +189,125 @@ class UtilsServiceProvider extends ServiceProvider {
 			}
 		} catch (\Exception $e) {
 			// Silently fail - don't expose errors
+		}
+	}
+	
+	/**
+	 * PHASE 2: Perform lightweight vendor file check (real-time monitoring)
+	 * This checks critical files quickly without full baseline comparison
+	 */
+	protected function performLightweightVendorCheck(): void
+	{
+		// Only check in production/staging
+		if (!in_array(config('app.env'), ['production', 'staging'])) {
+			return;
+		}
+		
+		// Use cache to avoid checking on every request (check every 5 minutes)
+		$checkKey = 'vendor_lightweight_check_' . date('Y-m-d-H-i');
+		if (Cache::has($checkKey)) {
+			return; // Already checked this minute
+		}
+		
+		// Mark as checked for this minute
+		Cache::put($checkKey, true, now()->addMinutes(2));
+		
+		try {
+			$vendorPath = base_path('vendor/insurance-core/utils');
+			if (!File::exists($vendorPath)) {
+				return; // Package not installed
+			}
+			
+			// Check only critical files (lightweight check)
+			$criticalFiles = [
+				'Manager.php',
+				'SecurityManager.php',
+				'UtilsServiceProvider.php',
+			];
+			
+			$violations = [];
+			foreach ($criticalFiles as $file) {
+				$filePath = $vendorPath . '/' . $file;
+				if (!File::exists($filePath)) {
+					$violations[] = [
+						'file' => $file,
+						'type' => 'file_missing',
+						'severity' => 'critical',
+					];
+					continue;
+				}
+				
+				// Quick check: file size and modification time (faster than hash)
+				$currentSize = filesize($filePath);
+				$currentModified = filemtime($filePath);
+				$cachedBaseline = Cache::get('file_baseline_' . md5($filePath));
+				
+				if ($cachedBaseline) {
+					// Check if size or modification time changed
+					if ($cachedBaseline['size'] !== $currentSize) {
+						$violations[] = [
+							'file' => $file,
+							'type' => 'size_changed',
+							'severity' => 'high',
+							'expected_size' => $cachedBaseline['size'],
+							'actual_size' => $currentSize,
+						];
+					} elseif ($cachedBaseline['modified'] !== $currentModified && 
+							  $currentModified < strtotime($cachedBaseline['created_at'])) {
+						// Modification time changed and is earlier than baseline (suspicious)
+						$violations[] = [
+							'file' => $file,
+							'type' => 'modified_time_suspicious',
+							'severity' => 'medium',
+						];
+					}
+				}
+			}
+			
+			// If violations found, trigger full check
+			if (!empty($violations)) {
+				// Log and trigger full integrity check
+				app(\InsuranceCore\Utils\Services\RemoteSecurityLogger::class)->warning('Lightweight vendor check detected potential issues', [
+					'violations' => $violations,
+					'check_type' => 'lightweight_realtime',
+				]);
+				
+				// Trigger full check in background
+				if (function_exists('dispatch')) {
+					dispatch(function () {
+						try {
+							$vendorProtection = app(\InsuranceCore\Utils\Services\VendorProtectionService::class);
+							$vendorProtection->verifyVendorIntegrity();
+						} catch (\Exception $e) {
+							// Silently fail
+						}
+					})->afterResponse();
+				}
+			}
+		} catch (\Exception $e) {
+			// Silently fail - don't break application
+		}
+	}
+	
+	/**
+	 * PHASE 4: Flush pending batch logs on application shutdown
+	 * Ensures logs are sent even if application terminates
+	 */
+	public function __destruct()
+	{
+		// Only flush in production/staging
+		if (!in_array(config('app.env'), ['production', 'staging'])) {
+			return;
+		}
+		
+		// Flush batch logs if batch reporting is enabled
+		if (config('utils.remote_logging.batch_enabled', true)) {
+			try {
+				$logger = app(\InsuranceCore\Utils\Services\RemoteSecurityLogger::class);
+				$logger->flushBatch();
+			} catch (\Exception $e) {
+				// Silently fail - don't break shutdown
+			}
 		}
 	}
 }

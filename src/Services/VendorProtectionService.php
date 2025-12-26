@@ -251,14 +251,10 @@ class VendorProtectionService
             }
         }
 
-        // Check structure integrity
-        if ($currentState['structure_hash'] !== $baseline['structure_hash']) {
-            $violations[] = [
-                'type' => 'structure_modified',
-                'severity' => 'high',
-                'original_structure' => $baseline['structure_hash'],
-                'current_structure' => $currentState['structure_hash']
-            ];
+        // ENHANCED: Check structure integrity with detailed validation
+        $structureViolations = $this->validateVendorStructure($baseline, $currentState);
+        if (!empty($structureViolations)) {
+            $violations = array_merge($violations, $structureViolations);
         }
 
         // Handle violations
@@ -615,6 +611,127 @@ class VendorProtectionService
             Log::error('Vendor restoration failed', ['error' => $e->getMessage()]);
             return false;
         }
+    }
+
+    /**
+     * PHASE 2: Validate vendor directory structure
+     * Checks that directory structure hasn't been modified (files added/removed, directories changed)
+     * 
+     * @param array $baseline Original baseline structure
+     * @param array $currentState Current directory structure
+     * @return array Array of structure violations
+     */
+    public function validateVendorStructure(array $baseline, array $currentState): array
+    {
+        $violations = [];
+        
+        // Check structure hash (quick check)
+        if ($currentState['structure_hash'] !== $baseline['structure_hash']) {
+            // Structure changed - perform detailed analysis
+            $baselineFiles = array_keys($baseline['files']);
+            $currentFiles = array_keys($currentState['files']);
+            
+            // Find missing files (files in baseline but not in current)
+            $missingFiles = array_diff($baselineFiles, $currentFiles);
+            foreach ($missingFiles as $file) {
+                $violations[] = [
+                    'type' => 'structure_file_missing',
+                    'file' => $file,
+                    'severity' => isset($baseline['critical_files'][$file]) ? 'critical' : 'high',
+                    'description' => 'File exists in baseline but not in current structure',
+                ];
+            }
+            
+            // Find new files (files in current but not in baseline)
+            $newFiles = array_diff($currentFiles, $baselineFiles);
+            foreach ($newFiles as $file) {
+                $violations[] = [
+                    'type' => 'structure_file_added',
+                    'file' => $file,
+                    'severity' => 'medium',
+                    'description' => 'New file detected in vendor directory structure',
+                ];
+            }
+            
+            // Check directory structure (file paths)
+            $baselineDirs = $this->extractDirectoryStructure($baselineFiles);
+            $currentDirs = $this->extractDirectoryStructure($currentFiles);
+            
+            // Find missing directories
+            $missingDirs = array_diff($baselineDirs, $currentDirs);
+            foreach ($missingDirs as $dir) {
+                $violations[] = [
+                    'type' => 'structure_directory_missing',
+                    'directory' => $dir,
+                    'severity' => 'high',
+                    'description' => 'Directory exists in baseline but not in current structure',
+                ];
+            }
+            
+            // Find new directories
+            $newDirs = array_diff($currentDirs, $baselineDirs);
+            foreach ($newDirs as $dir) {
+                $violations[] = [
+                    'type' => 'structure_directory_added',
+                    'directory' => $dir,
+                    'severity' => 'medium',
+                    'description' => 'New directory detected in vendor structure',
+                ];
+            }
+            
+            // If no specific violations found but hash differs, it's a general structure change
+            if (empty($violations)) {
+                $violations[] = [
+                    'type' => 'structure_modified',
+                    'severity' => 'high',
+                    'original_structure' => $baseline['structure_hash'],
+                    'current_structure' => $currentState['structure_hash'],
+                    'description' => 'Directory structure hash changed but specific changes unclear',
+                ];
+            }
+        }
+        
+        // Check critical files are present
+        foreach ($baseline['critical_files'] as $file => $data) {
+            if (!isset($currentState['files'][$file])) {
+                $violations[] = [
+                    'type' => 'critical_file_missing',
+                    'file' => $file,
+                    'severity' => 'critical',
+                    'description' => 'Critical file missing from vendor directory',
+                ];
+            }
+        }
+        
+        return $violations;
+    }
+
+    /**
+     * Extract directory structure from file paths
+     * 
+     * @param array $files Array of file paths
+     * @return array Array of unique directory paths
+     */
+    protected function extractDirectoryStructure(array $files): array
+    {
+        $directories = [];
+        
+        foreach ($files as $file) {
+            $dir = dirname($file);
+            if ($dir !== '.' && $dir !== '') {
+                // Add all parent directories
+                $parts = explode(DIRECTORY_SEPARATOR, $dir);
+                $currentPath = '';
+                foreach ($parts as $part) {
+                    if ($part !== '') {
+                        $currentPath .= ($currentPath ? DIRECTORY_SEPARATOR : '') . $part;
+                        $directories[] = $currentPath;
+                    }
+                }
+            }
+        }
+        
+        return array_unique($directories);
     }
 
     /**

@@ -68,6 +68,13 @@ return [
 		'anti_debug' => env('UTILS_ANTI_DEBUG', true), // Anti-debugging measures
 	],
 	'remote_security_logging' => env('UTILS_REMOTE_SECURITY_LOGGING', true),
+	'remote_logging' => [
+		'batch_enabled' => env('UTILS_BATCH_LOGGING', true), // Enable batch reporting
+		'batch_size' => env('UTILS_BATCH_SIZE', 10), // Logs per batch
+		'batch_timeout' => env('UTILS_BATCH_TIMEOUT', 60), // Seconds before sending batch
+		'max_retries' => env('UTILS_LOG_MAX_RETRIES', 5), // Max retries for failed logs
+	],
+	'offline_grace_period_hours' => env('UTILS_OFFLINE_GRACE_PERIOD', 24), // Hours to allow app during server downtime
 	'deployment_security' => [
 		'auto_secure' => env('UTILS_AUTO_SECURE_DEPLOYMENT', true),
 		'remove_dev_files' => env('UTILS_REMOVE_DEV_FILES', true),

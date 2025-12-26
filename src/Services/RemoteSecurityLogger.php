@@ -22,7 +22,7 @@ class RemoteSecurityLogger
     }
 
     /**
-     * Send security log to validation server
+     * PHASE 4: Send security log to validation server with enhanced structure
      * Returns true if successfully sent, false otherwise
      */
     public function log($level, $message, array $context = []): bool
@@ -39,24 +39,16 @@ class RemoteSecurityLogger
         }
 
         try {
-            // Prepare log data
-            $logData = [
-                'level' => $level,
-                'message' => $message,
-                'context' => $context,
-                'system_key' => $this->systemKey,
-                'client_id' => $this->clientId,
-                'product_id' => config('utils.product_id'),
-                'domain' => request()->getHost() ?? 'unknown',
-                'ip_address' => request()->ip() ?? 'unknown',
-                'user_agent' => request()->userAgent() ?? 'unknown',
-                'timestamp' => now()->toISOString(),
-                'installation_id' => Cache::get('installation_id') ?? 'unknown',
-                'hardware_fingerprint' => substr(config('utils.system_key') ? md5(config('utils.system_key')) : 'unknown', 0, 16),
-            ];
+            // PHASE 4: Enhanced structured log data
+            $logData = $this->prepareEnhancedLogData($level, $message, $context);
 
-            // Send to validation server asynchronously (don't block request)
-            $this->sendAsync($logData);
+            // PHASE 4: Use batch reporting if enabled
+            if (config('utils.remote_logging.batch_enabled', true)) {
+                $this->addToBatch($logData);
+            } else {
+                // Send immediately (legacy behavior)
+                $this->sendAsync($logData);
+            }
 
             return true;
         } catch (\Exception $e) {
@@ -68,6 +60,284 @@ class RemoteSecurityLogger
                 ]);
             }
             return false;
+        }
+    }
+
+    /**
+     * PHASE 4: Prepare enhanced structured log data
+     * 
+     * @param string $level Log level
+     * @param string $message Log message
+     * @param array $context Additional context
+     * @return array Enhanced log data structure
+     */
+    protected function prepareEnhancedLogData(string $level, string $message, array $context = []): array
+    {
+        // Get hardware fingerprint properly
+        $hardwareFingerprint = 'unknown';
+        try {
+            $manager = app(\InsuranceCore\Utils\Manager::class);
+            $hardwareFingerprint = substr($manager->generateHardwareFingerprint(), 0, 32);
+        } catch (\Exception $e) {
+            // Fallback if manager not available
+        }
+
+        // Enhanced structured log data
+        return [
+            // Core log information
+            'level' => strtolower($level),
+            'message' => $message,
+            'timestamp' => now()->toISOString(),
+            'timestamp_unix' => now()->timestamp,
+            
+            // System identification
+            'system_key' => $this->systemKey,
+            'client_id' => $this->clientId,
+            'product_id' => config('utils.product_id'),
+            'installation_id' => Cache::get('installation_id') ?? 'unknown',
+            'hardware_fingerprint' => $hardwareFingerprint,
+            
+            // Request context
+            'request' => [
+                'domain' => request()->getHost() ?? 'unknown',
+                'ip_address' => request()->ip() ?? 'unknown',
+                'user_agent' => request()->userAgent() ?? 'unknown',
+                'method' => request()->method() ?? 'unknown',
+                'path' => request()->path() ?? 'unknown',
+                'referer' => request()->header('referer'),
+            ],
+            
+            // Enhanced context
+            'context' => $this->enrichContext($context),
+            
+            // Metadata
+            'metadata' => [
+                'environment' => config('app.env', 'unknown'),
+                'app_version' => config('app.version', 'unknown'),
+                'laravel_version' => app()->version(),
+                'php_version' => PHP_VERSION,
+            ],
+            
+            // Logging metadata
+            'log_metadata' => [
+                'source' => 'insurance-core-utils',
+                'version' => '4.1.9',
+                'log_id' => $this->generateLogId(),
+            ],
+        ];
+    }
+
+    /**
+     * PHASE 4: Enrich context with additional information
+     * 
+     * @param array $context Original context
+     * @return array Enriched context
+     */
+    protected function enrichContext(array $context): array
+    {
+        // Add common context that might be missing
+        if (!isset($context['session_id'])) {
+            try {
+                $context['session_id'] = session()->getId() ?? 'no-session';
+            } catch (\Exception $e) {
+                $context['session_id'] = 'session-unavailable';
+            }
+        }
+
+        // Add validation state if available
+        if (!isset($context['validation_state'])) {
+            try {
+                $context['validation_state'] = [
+                    'middleware_enabled' => Cache::get('system_middleware_executed', false),
+                    'last_validation' => Cache::get('last_validation_time'),
+                ];
+            } catch (\Exception $e) {
+                // Skip if unavailable
+            }
+        }
+
+        return $context;
+    }
+
+    /**
+     * PHASE 4: Generate unique log ID for tracking
+     * 
+     * @return string Unique log ID
+     */
+    protected function generateLogId(): string
+    {
+        return md5(now()->toISOString() . uniqid('', true) . $this->systemKey);
+    }
+
+    /**
+     * PHASE 4: Add log to batch queue for batch reporting
+     * 
+     * @param array $logData Log data to batch
+     */
+    protected function addToBatch(array $logData): void
+    {
+        $batchKey = 'security_logs_batch_' . md5($this->systemKey);
+        $batch = Cache::get($batchKey, []);
+        
+        // Add log to batch
+        $batch[] = $logData;
+        
+        // Get batch size limit (default: 10 logs per batch)
+        $batchSize = config('utils.remote_logging.batch_size', 10);
+        $batchTimeout = config('utils.remote_logging.batch_timeout', 60); // seconds
+        
+        // Check if batch should be sent
+        $shouldSend = false;
+        
+        // Send if batch is full
+        if (count($batch) >= $batchSize) {
+            $shouldSend = true;
+        }
+        
+        // Send if batch timeout reached
+        $lastBatchTime = Cache::get('security_logs_batch_last_sent');
+        if ($lastBatchTime) {
+            $timeSinceLastBatch = now()->diffInSeconds($lastBatchTime);
+            if ($timeSinceLastBatch >= $batchTimeout) {
+                $shouldSend = true;
+            }
+        } else {
+            // First log in batch - set timeout
+            Cache::put('security_logs_batch_last_sent', now(), now()->addMinutes(5));
+        }
+        
+        if ($shouldSend) {
+            // Send batch and clear
+            $this->sendBatch($batch);
+            Cache::forget($batchKey);
+            Cache::put('security_logs_batch_last_sent', now(), now()->addMinutes(5));
+        } else {
+            // Store batch for later
+            Cache::put($batchKey, $batch, now()->addMinutes(5));
+        }
+    }
+
+    /**
+     * PHASE 4: Send batch of logs to server
+     * 
+     * @param array $batch Array of log data
+     */
+    protected function sendBatch(array $batch): void
+    {
+        if (empty($batch)) {
+            return;
+        }
+
+        // Send batch asynchronously
+        if (function_exists('dispatch') && class_exists(\Illuminate\Queue\QueueManager::class)) {
+            try {
+                dispatch(function () use ($batch) {
+                    $this->sendBatchToServer($batch);
+                })->afterResponse();
+                return;
+            } catch (\Exception $e) {
+                // Queue failed, fall through to HTTP
+            }
+        }
+
+        // Fallback: send via HTTP (non-blocking)
+        $this->sendBatchNonBlocking($batch);
+    }
+
+    /**
+     * PHASE 4: Actually send batch to server
+     * 
+     * @param array $batch Array of log data
+     * @return bool True if successfully sent
+     */
+    protected function sendBatchToServer(array $batch): bool
+    {
+        try {
+            $endpoint = rtrim($this->validationServer, '/') . '/api/report-batch';
+            
+            // Prepare batch payload
+            $payload = [
+                'system_key' => $this->systemKey,
+                'client_id' => $this->clientId,
+                'product_id' => config('utils.product_id'),
+                'batch_size' => count($batch),
+                'batch_timestamp' => now()->toISOString(),
+                'logs' => $batch,
+            ];
+
+            $response = Http::withHeaders([
+                'Authorization' => 'Bearer ' . $this->apiToken,
+                'Content-Type' => 'application/json',
+            ])->timeout(5) // Slightly longer timeout for batch
+              ->connectTimeout(3)
+              ->post($endpoint, $payload);
+
+            if ($response->successful()) {
+                // Track successful batch communication
+                Cache::put('server_communication_last_success', now(), now()->addHours(24));
+                Cache::put('batch_send_success_count', Cache::get('batch_send_success_count', 0) + 1, now()->addDays(1));
+                return true;
+            }
+
+            // Batch failed - fall back to individual sends
+            $this->fallbackToIndividualSends($batch);
+            return false;
+        } catch (\Exception $e) {
+            // Batch failed - fall back to individual sends
+            $this->fallbackToIndividualSends($batch);
+            return false;
+        }
+    }
+
+    /**
+     * PHASE 4: Fallback to individual log sends if batch fails
+     * 
+     * @param array $batch Array of log data
+     */
+    protected function fallbackToIndividualSends(array $batch): void
+    {
+        // If batch fails, send logs individually (but still async)
+        foreach ($batch as $logData) {
+            try {
+                $this->sendAsync($logData);
+            } catch (\Exception $e) {
+                // Cache for retry
+                $this->cacheFailedLog($logData);
+            }
+        }
+    }
+
+    /**
+     * PHASE 4: Send batch non-blocking via HTTP
+     * 
+     * @param array $batch Array of log data
+     */
+    protected function sendBatchNonBlocking(array $batch): void
+    {
+        try {
+            $endpoint = rtrim($this->validationServer, '/') . '/api/report-batch';
+            
+            $payload = [
+                'system_key' => $this->systemKey,
+                'client_id' => $this->clientId,
+                'product_id' => config('utils.product_id'),
+                'batch_size' => count($batch),
+                'batch_timestamp' => now()->toISOString(),
+                'logs' => $batch,
+            ];
+
+            // Fire and forget
+            Http::withHeaders([
+                'Authorization' => 'Bearer ' . $this->apiToken,
+                'Content-Type' => 'application/json',
+            ])->timeout(1) // Very short timeout
+              ->connectTimeout(1)
+              ->post($endpoint, $payload);
+        } catch (\Exception $e) {
+            // Silently cache for retry
+            foreach ($batch as $logData) {
+                $this->cacheFailedLog($logData);
+            }
         }
     }
 
@@ -97,28 +367,37 @@ class RemoteSecurityLogger
     }
 
     /**
-     * Send log non-blocking via HTTP (fire and forget)
+     * PHASE 4: Send log non-blocking via HTTP (fire and forget)
+     * Updated to use enhanced log structure
      */
     protected function sendNonBlocking(array $logData): void
     {
         // Send in background without waiting for response
         try {
             $endpoint = rtrim($this->validationServer, '/') . '/api/report-suspicious';
+            
+            // PHASE 4: Extract data from enhanced structure
+            $request = $logData['request'] ?? [];
+            $domain = $request['domain'] ?? $logData['domain'] ?? 'unknown';
+            $ipAddress = $request['ip_address'] ?? $logData['ip_address'] ?? 'unknown';
+            $userAgent = $request['user_agent'] ?? $logData['user_agent'] ?? 'unknown';
+            
             $payload = [
                 'system_key' => $logData['system_key'] ?? $this->systemKey,
                 'client_id' => $logData['client_id'] ?? $this->clientId,
-                'violation_type' => 'security_log_' . $logData['level'],
-                'suspicion_score' => $this->calculateSuspicionScore($logData['level']),
+                'violation_type' => 'security_log_' . ($logData['level'] ?? 'info'),
+                'suspicion_score' => $this->calculateSuspicionScore($logData['level'] ?? 'info'),
                 'violation_data' => json_encode([
-                    'log_message' => $logData['message'],
-                    'log_context' => $logData['context'],
-                    'timestamp' => $logData['timestamp'],
-                    'domain' => $logData['domain'],
-                    'ip_address' => $logData['ip_address'],
+                    'log_message' => $logData['message'] ?? '',
+                    'log_context' => $logData['context'] ?? [],
+                    'timestamp' => $logData['timestamp'] ?? now()->toISOString(),
+                    'domain' => $domain,
+                    'ip_address' => $ipAddress,
+                    'log_id' => $logData['log_metadata']['log_id'] ?? null,
                 ]),
-                'domain' => $logData['domain'],
-                'ip_address' => $logData['ip_address'],
-                'user_agent' => $logData['user_agent'],
+                'domain' => $domain,
+                'ip_address' => $ipAddress,
+                'user_agent' => $userAgent,
             ];
 
             // Use Http::asJson()->post() with very short timeout (doesn't block)
@@ -135,45 +414,65 @@ class RemoteSecurityLogger
     }
 
     /**
-     * Actually send the log to the server
+     * PHASE 4: Actually send the log to the server with enhanced error handling
+     * Updated to use enhanced log structure
+     * 
+     * @param array $logData Log data to send
+     * @return bool True if successfully sent
      */
-    protected function sendToServer(array $logData): void
+    protected function sendToServer(array $logData): bool
     {
         try {
             $endpoint = rtrim($this->validationServer, '/') . '/api/report-suspicious';
+            
+            // PHASE 4: Extract data from enhanced structure
+            $request = $logData['request'] ?? [];
+            $domain = $request['domain'] ?? $logData['domain'] ?? 'unknown';
+            $ipAddress = $request['ip_address'] ?? $logData['ip_address'] ?? 'unknown';
+            $userAgent = $request['user_agent'] ?? $logData['user_agent'] ?? 'unknown';
             
             $response = Http::withHeaders([
                 'Authorization' => 'Bearer ' . $this->apiToken,
                 'Content-Type' => 'application/json',
             ])->timeout(3) // Short timeout - don't delay
+              ->connectTimeout(2)
               ->post($endpoint, [
                 'system_key' => $logData['system_key'] ?? $this->systemKey,
                 'client_id' => $logData['client_id'] ?? $this->clientId,
-                'violation_type' => 'security_log_' . $logData['level'],
-                'suspicion_score' => $this->calculateSuspicionScore($logData['level']),
+                'violation_type' => 'security_log_' . ($logData['level'] ?? 'info'),
+                'suspicion_score' => $this->calculateSuspicionScore($logData['level'] ?? 'info'),
                 'violation_data' => json_encode([
-                    'log_message' => $logData['message'],
-                    'log_context' => $logData['context'],
-                    'timestamp' => $logData['timestamp'],
-                    'domain' => $logData['domain'],
-                    'ip_address' => $logData['ip_address'],
+                    'log_message' => $logData['message'] ?? '',
+                    'log_context' => $logData['context'] ?? [],
+                    'timestamp' => $logData['timestamp'] ?? now()->toISOString(),
+                    'domain' => $domain,
+                    'ip_address' => $ipAddress,
+                    'log_id' => $logData['log_metadata']['log_id'] ?? null,
+                    'metadata' => $logData['metadata'] ?? [],
                 ]),
-                'domain' => $logData['domain'],
-                'ip_address' => $logData['ip_address'],
-                'user_agent' => $logData['user_agent'],
+                'domain' => $domain,
+                'ip_address' => $ipAddress,
+                'user_agent' => $userAgent,
             ]);
 
-            // Only log locally if response failed and not in stealth mode
-            if (!$response->successful() && !config('utils.stealth.mute_logs', false)) {
+            if ($response->successful()) {
+                // Track successful communication
+                Cache::put('server_communication_last_success', now(), now()->addHours(24));
+                return true;
+            }
+
+            // Non-successful response - log and return false for retry
+            if (!config('utils.stealth.mute_logs', false)) {
                 Log::debug('Security log server response', [
                     'status' => $response->status(),
                     'body' => $response->body()
                 ]);
             }
+            return false;
         } catch (\Exception $e) {
-            // Silently fail - don't break application
-            // Cache failed logs locally for later retry (optional)
+            // Exception occurred - cache for retry and return false
             $this->cacheFailedLog($logData);
+            return false;
         }
     }
 
@@ -214,7 +513,7 @@ class RemoteSecurityLogger
     }
 
     /**
-     * Retry sending cached logs
+     * PHASE 3: Retry sending cached logs with enhanced error recovery
      */
     public function retryFailedLogs(): void
     {
@@ -225,13 +524,62 @@ class RemoteSecurityLogger
             return;
         }
 
-        foreach ($pendingLogs as $logData) {
-            $this->sendToServer($logData);
+        $successCount = 0;
+        $failedLogs = [];
+
+        foreach ($pendingLogs as $index => $logData) {
+            try {
+                $success = $this->sendToServer($logData);
+                if ($success) {
+                    $successCount++;
+                } else {
+                    // Track failed logs with retry count
+                    $logData['retry_count'] = ($logData['retry_count'] ?? 0) + 1;
+                    $logData['last_retry'] = now()->toISOString();
+                    
+                    // Only keep logs that haven't exceeded max retries
+                    $maxRetries = config('utils.remote_logging.max_retries', 5);
+                    if ($logData['retry_count'] < $maxRetries) {
+                        $failedLogs[] = $logData;
+                    } else {
+                        // Log exceeded max retries - log locally and discard
+                        Log::warning('Security log exceeded max retries, discarding', [
+                            'log_level' => $logData['level'] ?? 'unknown',
+                            'retry_count' => $logData['retry_count'],
+                        ]);
+                    }
+                }
+            } catch (\Exception $e) {
+                // Track exception and retry
+                $logData['retry_count'] = ($logData['retry_count'] ?? 0) + 1;
+                $logData['last_retry'] = now()->toISOString();
+                $logData['last_error'] = $e->getMessage();
+                
+                $maxRetries = config('utils.remote_logging.max_retries', 5);
+                if ($logData['retry_count'] < $maxRetries) {
+                    $failedLogs[] = $logData;
+                }
+            }
         }
 
-        // Clear after attempt
-        Cache::forget($cacheKey);
+        // Update cache with failed logs (for next retry)
+        if (!empty($failedLogs)) {
+            Cache::put($cacheKey, $failedLogs, now()->addHours(24));
+        } else {
+            // All logs sent successfully - clear cache
+            Cache::forget($cacheKey);
+        }
+
+        // Log retry results
+        if ($successCount > 0 || !empty($failedLogs)) {
+            Log::info('Retried failed security logs', [
+                'successful' => $successCount,
+                'failed' => count($failedLogs),
+                'total' => count($pendingLogs),
+            ]);
+        }
     }
+
 
     /**
      * Convenience methods for different log levels
@@ -340,6 +688,41 @@ class RemoteSecurityLogger
             'reason' => $data['reason'] ?? null,
             'validation_result' => $data['validation_result'] ?? 'allowed',
         ]);
+    }
+
+    /**
+     * PHASE 4: Flush pending batch logs (call on shutdown or periodically)
+     * Useful for ensuring logs are sent before application shutdown
+     */
+    public function flushBatch(): void
+    {
+        $batchKey = 'security_logs_batch_' . md5($this->systemKey);
+        $batch = Cache::get($batchKey, []);
+        
+        if (!empty($batch)) {
+            $this->sendBatch($batch);
+            Cache::forget($batchKey);
+        }
+    }
+
+    /**
+     * PHASE 4: Get batch statistics for monitoring
+     * 
+     * @return array Batch statistics
+     */
+    public function getBatchStats(): array
+    {
+        $batchKey = 'security_logs_batch_' . md5($this->systemKey);
+        $batch = Cache::get($batchKey, []);
+        
+        return [
+            'pending_logs' => count($batch),
+            'batch_size_limit' => config('utils.remote_logging.batch_size', 10),
+            'batch_timeout' => config('utils.remote_logging.batch_timeout', 60),
+            'last_batch_sent' => Cache::get('security_logs_batch_last_sent'),
+            'batch_enabled' => config('utils.remote_logging.batch_enabled', true),
+            'success_count' => Cache::get('batch_send_success_count', 0),
+        ];
     }
 }
 

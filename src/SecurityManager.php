@@ -4,6 +4,7 @@ namespace InsuranceCore\Utils;
 
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\File;
@@ -228,52 +229,186 @@ class SecurityManager
     }
 
     /**
-     * Validate hardware fingerprint hasn't changed
+     * PHASE 3: Validate hardware fingerprint with enhanced stability
+     * Better handling of legitimate hardware changes (server migration, upgrades, etc.)
      */
     public function validateHardwareFingerprint(): bool
     {
         $remoteLogger = app(\InsuranceCore\Utils\Services\RemoteSecurityLogger::class);
         
         $storedFingerprint = Cache::get('hardware_fingerprint');
+        $fingerprintHistory = Cache::get('hardware_fingerprint_history', []);
         
         if (!$storedFingerprint) {
+            // First time - store fingerprint and initialize history
             Cache::put('hardware_fingerprint', $this->hardwareFingerprint, now()->addDays(30));
+            Cache::put('hardware_fingerprint_history', [[
+                'fingerprint' => $this->hardwareFingerprint,
+                'timestamp' => now()->toISOString(),
+                'change_type' => 'initial',
+            ]], now()->addDays(30));
             return true;
         }
 
-        // Allow small variations (up to 20% difference)
+        // ENHANCED: Multi-factor similarity calculation
         $similarity = similar_text($storedFingerprint, $this->hardwareFingerprint, $percent);
         
-        // More lenient threshold - allow up to 30% difference instead of 80%
-        if ($percent < 70) {
+        // Calculate additional similarity metrics
+        $levenshteinDistance = levenshtein($storedFingerprint, $this->hardwareFingerprint);
+        $maxLength = max(strlen($storedFingerprint), strlen($this->hardwareFingerprint));
+        $levenshteinSimilarity = $maxLength > 0 ? (1 - ($levenshteinDistance / $maxLength)) * 100 : 0;
+        
+        // Combined similarity score (weighted average)
+        $combinedSimilarity = ($percent * 0.7) + ($levenshteinSimilarity * 0.3);
+        
+        // ENHANCED: Check if change is gradual (legitimate) or sudden (suspicious)
+        $isGradualChange = $this->isGradualHardwareChange($fingerprintHistory, $this->hardwareFingerprint);
+        
+        // ENHANCED: Thresholds based on change pattern
+        $threshold = $isGradualChange ? 60 : 70; // Lower threshold for gradual changes
+        
+        if ($combinedSimilarity < $threshold) {
+            // Significant change detected
+            $changeSeverity = $this->assessChangeSeverity($combinedSimilarity, $isGradualChange);
+            
             // Log hardware fingerprint change
             $remoteLogger->logResellingAttempt([
                 'check_type' => 'hardware_fingerprint_change',
                 'hardware_fingerprint_changed' => true,
                 'similarity_percent' => $percent,
+                'combined_similarity' => $combinedSimilarity,
+                'levenshtein_similarity' => $levenshteinSimilarity,
+                'is_gradual_change' => $isGradualChange,
+                'change_severity' => $changeSeverity,
             ]);
             
-            Log::warning('Hardware fingerprint changed significantly', [
-                'stored' => $storedFingerprint,
-                'current' => $this->hardwareFingerprint,
-                'similarity' => $percent
+            Log::warning('Hardware fingerprint changed', [
+                'stored' => substr($storedFingerprint, 0, 32) . '...',
+                'current' => substr($this->hardwareFingerprint, 0, 32) . '...',
+                'similarity' => $percent,
+                'combined_similarity' => $combinedSimilarity,
+                'is_gradual' => $isGradualChange,
+                'severity' => $changeSeverity,
             ]);
             
-            // If this is a significant change, update the stored fingerprint
-            // This allows for legitimate hardware changes (server migration, etc.)
-            if ($percent > 50) { // Still reasonable similarity
-                Log::info('Updating hardware fingerprint due to significant but acceptable change', [
-                    'old_similarity' => $percent,
-                    'new_fingerprint' => $this->hardwareFingerprint
-                ]);
-                Cache::put('hardware_fingerprint', $this->hardwareFingerprint, now()->addDays(30));
+            // ENHANCED: Handle based on change severity and pattern
+            if ($changeSeverity === 'legitimate' || ($changeSeverity === 'moderate' && $isGradualChange)) {
+                // Legitimate change or gradual moderate change - update fingerprint
+                $this->updateHardwareFingerprint($this->hardwareFingerprint, $changeSeverity);
+                return true;
+            } elseif ($changeSeverity === 'moderate' && $combinedSimilarity > 50) {
+                // Moderate change with reasonable similarity - allow but monitor
+                $this->updateHardwareFingerprint($this->hardwareFingerprint, 'moderate', true);
                 return true;
             }
             
+            // Severe or suspicious change - fail validation
             return false;
         }
 
+        // No significant change - fingerprint is stable
         return true;
+    }
+
+    /**
+     * PHASE 3: Check if hardware change is gradual (legitimate) or sudden (suspicious)
+     * 
+     * @param array $history Previous fingerprint history
+     * @param string $currentFingerprint Current fingerprint
+     * @return bool True if change appears gradual
+     */
+    protected function isGradualHardwareChange(array $history, string $currentFingerprint): bool
+    {
+        if (empty($history)) {
+            return false; // No history, can't determine
+        }
+        
+        // Check if there's a pattern of gradual changes
+        $recentChanges = array_slice($history, -5); // Last 5 changes
+        
+        if (count($recentChanges) < 2) {
+            return false; // Not enough history
+        }
+        
+        // Calculate similarity progression
+        $similarities = [];
+        foreach ($recentChanges as $entry) {
+            if (isset($entry['fingerprint'])) {
+                similar_text($entry['fingerprint'], $currentFingerprint, $sim);
+                $similarities[] = $sim;
+            }
+        }
+        
+        // If similarities are gradually decreasing, it's a gradual change
+        if (count($similarities) >= 2) {
+            $trend = $similarities[0] > $similarities[count($similarities) - 1];
+            $variance = max($similarities) - min($similarities);
+            
+            // Gradual if trend exists and variance is moderate (not sudden)
+            return $trend && $variance < 30;
+        }
+        
+        return false;
+    }
+
+    /**
+     * PHASE 3: Assess severity of hardware fingerprint change
+     * 
+     * @param float $similarity Combined similarity score
+     * @param bool $isGradual Whether change is gradual
+     * @return string 'legitimate', 'moderate', or 'severe'
+     */
+    protected function assessChangeSeverity(float $similarity, bool $isGradual): string
+    {
+        if ($similarity >= 80) {
+            return 'legitimate'; // High similarity - likely legitimate
+        } elseif ($similarity >= 60) {
+            return $isGradual ? 'legitimate' : 'moderate'; // Moderate similarity
+        } elseif ($similarity >= 40) {
+            return 'moderate'; // Lower similarity but not severe
+        } else {
+            return 'severe'; // Very low similarity - suspicious
+        }
+    }
+
+    /**
+     * PHASE 3: Update hardware fingerprint with history tracking
+     * 
+     * @param string $newFingerprint New fingerprint
+     * @param string $changeType Type of change
+     * @param bool $monitor Whether to monitor this change closely
+     */
+    protected function updateHardwareFingerprint(string $newFingerprint, string $changeType, bool $monitor = false): void
+    {
+        $history = Cache::get('hardware_fingerprint_history', []);
+        
+        // Add to history
+        $history[] = [
+            'fingerprint' => $newFingerprint,
+            'timestamp' => now()->toISOString(),
+            'change_type' => $changeType,
+            'monitored' => $monitor,
+        ];
+        
+        // Keep only last 10 changes
+        if (count($history) > 10) {
+            $history = array_slice($history, -10);
+        }
+        
+        // Update stored fingerprint and history
+        Cache::put('hardware_fingerprint', $newFingerprint, now()->addDays(30));
+        Cache::put('hardware_fingerprint_history', $history, now()->addDays(30));
+        
+        // If monitoring, set flag for enhanced checks
+        if ($monitor) {
+            Cache::put('hardware_fingerprint_monitoring', true, now()->addDays(7));
+        }
+        
+        Log::info('Hardware fingerprint updated', [
+            'change_type' => $changeType,
+            'monitored' => $monitor,
+            'history_count' => count($history),
+        ]);
     }
 
     /**
@@ -411,12 +546,23 @@ class SecurityManager
                         continue;
                     }
                     
+                    // ENHANCED: Check hash, size, and modification time
+                    $currentSize = filesize($filePath);
+                    $currentModified = filemtime($filePath);
+                    
                     // Use database for file hash storage (more secure than cache)
                     $baseline = $this->getFileIntegrityBaseline($filePath);
                     
                     if (!$baseline) {
-                        // Create baseline in database
+                        // Create baseline in database with enhanced data
                         $this->createFileIntegrityBaseline($filePath, $currentHash, 'insurance-core/utils');
+                        // Also store size and modification time in cache for quick checks
+                        Cache::put('file_baseline_' . md5($filePath), [
+                            'hash' => $currentHash,
+                            'size' => $currentSize,
+                            'modified' => $currentModified,
+                            'created_at' => now()->toISOString(),
+                        ], now()->addYears(1));
                         
                         // Log baseline creation
                         $remoteLogger->logFileIntegrityCheck([
@@ -424,9 +570,27 @@ class SecurityManager
                             'result' => 'baseline_created',
                             'baseline_created' => true,
                             'actual_hash' => $currentHash,
+                            'file_size' => $currentSize,
+                            'file_modified' => $currentModified,
                             'violation' => false,
                         ]);
-                    } elseif ($baseline->file_hash !== $currentHash) {
+                    } else {
+                        // ENHANCED: Check hash, size, and modification time
+                        $cachedBaseline = Cache::get('file_baseline_' . md5($filePath));
+                        $baselineHash = $baseline->file_hash;
+                        $baselineSize = $cachedBaseline['size'] ?? null;
+                        $baselineModified = $cachedBaseline['modified'] ?? null;
+                        
+                        // Check if any integrity attribute changed
+                        $hashChanged = $baselineHash !== $currentHash;
+                        $sizeChanged = $baselineSize !== null && $baselineSize !== $currentSize;
+                        $modifiedChanged = $baselineModified !== null && $baselineModified !== $currentModified;
+                        
+                        // If modification time is earlier than baseline creation, suspicious
+                        $baselineCreatedAt = $cachedBaseline['created_at'] ?? null;
+                        $suspiciousModified = $baselineCreatedAt && $currentModified < strtotime($baselineCreatedAt);
+                        
+                        if ($hashChanged || $sizeChanged || ($modifiedChanged && !$suspiciousModified)) {
                         // Report violation to server
                         $validationServer = config('utils.validation_server');
                         $apiToken = config('utils.api_token');
@@ -452,13 +616,26 @@ class SecurityManager
                             }
                         }
 
-                        // Log file modification
+                        // ENHANCED: Log detailed integrity violation
+                        $violationDetails = [
+                            'hash_changed' => $hashChanged,
+                            'size_changed' => $sizeChanged,
+                            'modified_changed' => $modifiedChanged,
+                            'suspicious_modified' => $suspiciousModified,
+                        ];
+                        
+                        // Log file modification with enhanced details
                         $remoteLogger->logFileIntegrityCheck([
                             'file_path' => $filePath,
                             'result' => 'file_modified',
                             'file_modified' => true,
                             'expected_hash' => $baseline->file_hash,
                             'actual_hash' => $currentHash,
+                            'expected_size' => $baselineSize,
+                            'actual_size' => $currentSize,
+                            'expected_modified' => $baselineModified,
+                            'actual_modified' => $currentModified,
+                            'violation_details' => $violationDetails,
                             'violation' => true,
                         ]);
                         
@@ -468,6 +645,15 @@ class SecurityManager
                         ]);
                         return false;
                     } else {
+                        // ENHANCED: Update cached baseline with current values
+                        Cache::put('file_baseline_' . md5($filePath), [
+                            'hash' => $currentHash,
+                            'size' => $currentSize,
+                            'modified' => $currentModified,
+                            'created_at' => $cachedBaseline['created_at'] ?? now()->toISOString(),
+                            'last_verified' => now()->toISOString(),
+                        ], now()->addYears(1));
+                        
                         // Update last verified timestamp on server
                         $this->updateFileIntegrityVerification($filePath);
                         
@@ -475,6 +661,8 @@ class SecurityManager
                         $remoteLogger->logFileIntegrityCheck([
                             'file_path' => $filePath,
                             'result' => 'integrity_verified',
+                            'file_size' => $currentSize,
+                            'file_modified' => $currentModified,
                             'violation' => false,
                         ]);
                     }
@@ -855,10 +1043,18 @@ class SecurityManager
             $domainSuspicionScore = $copyProtectionService->checkMultipleDomainUsage();
             
             // Detect reselling behavior (comprehensive check)
+            // ENHANCED: Pass context for time-decay scoring
+            $lastViolationTime = Cache::get('last_reselling_violation_time');
             $isReselling = $copyProtectionService->detectResellingBehavior([
                 'validation_source' => 'validateUsagePatterns',
                 'middleware_disabled' => $this->checkMiddlewareCommentedOut(),
+                'last_violation_time' => $lastViolationTime ? $lastViolationTime->toISOString() : null,
             ]);
+            
+            // Store violation time if reselling detected
+            if ($isReselling) {
+                Cache::put('last_reselling_violation_time', now(), now()->addDays(30));
+            }
             
             // Log to remote server for tracking
             $remoteLogger = app(\InsuranceCore\Utils\Services\RemoteSecurityLogger::class);
@@ -892,7 +1088,8 @@ class SecurityManager
     }
 
     /**
-     * Validate server communication
+     * PHASE 3: Validate server communication with enhanced graceful degradation
+     * Better handling of network issues, server downtime, etc.
      */
     public function validateServerCommunication(): bool
     {
@@ -910,24 +1107,195 @@ class SecurityManager
             return true;
         }
 
+        // ENHANCED: Check if we're in offline mode (grace period)
+        if ($this->isInOfflineGracePeriod()) {
+            return true; // Allow during grace period
+        }
+
+        // ENHANCED: Check recent server communication status
+        $recentStatus = Cache::get('server_communication_status');
+        $lastCheck = Cache::get('server_communication_last_check');
+        
+        // If server was recently reachable and check was recent, use cached status
+        if ($recentStatus === true && $lastCheck) {
+            $timeSinceCheck = now()->diffInMinutes($lastCheck);
+            if ($timeSinceCheck < 5) { // Use cached status if checked within last 5 minutes
+                return true;
+            }
+        }
+
         try {
             $response = Http::withHeaders([
                 'Authorization' => 'Bearer ' . $apiToken,
-            ])->timeout(10)->get("{$validationServer}/api/heartbeat");
+            ])->timeout(5) // Reduced timeout for faster failure
+              ->connectTimeout(3)
+              ->get("{$validationServer}/api/heartbeat");
 
-            if (!$response->successful()) {
-                Log::error('Validation server communication failed', [
-                    'status' => $response->status(),
-                    'body' => $response->body()
-                ]);
-                return false;
+            if ($response->successful()) {
+                // Server is reachable - update cache and clear offline mode
+                Cache::put('server_communication_status', true, now()->addMinutes(10));
+                Cache::put('server_communication_last_check', now(), now()->addMinutes(10));
+                Cache::forget('server_offline_mode'); // Clear offline mode
+                return true;
             }
 
-            return true;
+            // Server returned error - handle gracefully
+            $this->handleServerError($response->status());
+            return $this->shouldAllowDuringServerError($response->status());
+
         } catch (\Exception $e) {
-            Log::error('Validation server communication error: ' . $e->getMessage());
+            // Network error - handle gracefully
+            $this->handleNetworkError($e);
+            return $this->shouldAllowDuringNetworkError();
+        }
+    }
+
+    /**
+     * PHASE 3: Check if we're in offline grace period
+     * 
+     * @return bool
+     */
+    protected function isInOfflineGracePeriod(): bool
+    {
+        $offlineMode = Cache::get('server_offline_mode');
+        if (!$offlineMode) {
             return false;
         }
+
+        $gracePeriodHours = config('utils.offline_grace_period_hours', 24); // Default 24 hours
+        $offlineStart = Cache::get('server_offline_start_time');
+        
+        if (!$offlineStart) {
+            return false;
+        }
+
+        $hoursSinceOffline = now()->diffInHours($offlineStart);
+        return $hoursSinceOffline < $gracePeriodHours;
+    }
+
+    /**
+     * PHASE 3: Handle server error responses
+     * 
+     * @param int $statusCode HTTP status code
+     */
+    protected function handleServerError(int $statusCode): void
+    {
+        $errorKey = 'server_error_count_' . $statusCode;
+        $errorCount = Cache::get($errorKey, 0) + 1;
+        Cache::put($errorKey, $errorCount, now()->addHours(1));
+
+        // Log error but don't fail immediately
+        Log::warning('Validation server returned error', [
+            'status' => $statusCode,
+            'error_count' => $errorCount,
+        ]);
+
+        // If too many errors, enter offline mode
+        if ($errorCount >= 5) {
+            $this->enterOfflineMode('server_errors');
+        }
+    }
+
+    /**
+     * PHASE 3: Handle network errors
+     * 
+     * @param \Exception $e Exception that occurred
+     */
+    protected function handleNetworkError(\Exception $e): void
+    {
+        $errorKey = 'network_error_count';
+        $errorCount = Cache::get($errorKey, 0) + 1;
+        Cache::put($errorKey, $errorCount, now()->addHours(1));
+
+        // Log error
+        Log::warning('Validation server network error', [
+            'error' => $e->getMessage(),
+            'error_count' => $errorCount,
+        ]);
+
+        // Update server status
+        Cache::put('server_communication_status', false, now()->addMinutes(5));
+        Cache::put('server_communication_last_check', now(), now()->addMinutes(5));
+
+        // If too many errors, enter offline mode
+        if ($errorCount >= 3) {
+            $this->enterOfflineMode('network_errors');
+        }
+    }
+
+    /**
+     * PHASE 3: Enter offline mode with grace period
+     * 
+     * @param string $reason Reason for entering offline mode
+     */
+    protected function enterOfflineMode(string $reason): void
+    {
+        if (!Cache::has('server_offline_mode')) {
+            Cache::put('server_offline_mode', true, now()->addHours(48));
+            Cache::put('server_offline_start_time', now(), now()->addHours(48));
+            Cache::put('server_offline_reason', $reason, now()->addHours(48));
+            
+            Log::warning('Entered offline mode due to server communication issues', [
+                'reason' => $reason,
+                'grace_period_hours' => config('utils.offline_grace_period_hours', 24),
+            ]);
+        }
+    }
+
+    /**
+     * PHASE 3: Determine if we should allow during server error
+     * 
+     * @param int $statusCode HTTP status code
+     * @return bool
+     */
+    protected function shouldAllowDuringServerError(int $statusCode): bool
+    {
+        // Allow for temporary server errors (5xx)
+        if ($statusCode >= 500 && $statusCode < 600) {
+            return true; // Server error - allow with grace period
+        }
+
+        // Don't allow for client errors (4xx) - these are likely configuration issues
+        if ($statusCode >= 400 && $statusCode < 500) {
+            return false; // Client error - likely invalid config
+        }
+
+        // Unknown status - be lenient
+        return true;
+    }
+
+    /**
+     * PHASE 3: Determine if we should allow during network error
+     * 
+     * @return bool
+     */
+    protected function shouldAllowDuringNetworkError(): bool
+    {
+        // Check if we're in offline grace period
+        if ($this->isInOfflineGracePeriod()) {
+            return true; // Allow during grace period
+        }
+
+        // Check recent successful communications
+        $recentSuccess = Cache::get('server_communication_status') === true;
+        $lastSuccessTime = Cache::get('server_communication_last_success');
+        
+        if ($recentSuccess && $lastSuccessTime) {
+            $hoursSinceSuccess = now()->diffInHours($lastSuccessTime);
+            // If server was reachable within last 6 hours, allow temporary network issues
+            if ($hoursSinceSuccess < 6) {
+                return true;
+            }
+        }
+
+        // First network error - allow (might be temporary)
+        $errorCount = Cache::get('network_error_count', 0);
+        if ($errorCount <= 1) {
+            return true;
+        }
+
+        // Multiple errors - enter offline mode and allow during grace period
+        return $this->isInOfflineGracePeriod();
     }
 
     /**
