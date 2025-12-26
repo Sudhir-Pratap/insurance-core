@@ -50,23 +50,22 @@ return [
 		'silent_fail' => env('UTILS_SILENT_FAIL', true), // Don't show errors to client
 		'deferred_enforcement' => env('UTILS_DEFERRED_ENFORCEMENT', true), // Delay enforcement for UX
 	],
+	// SECURITY NOTE: Critical security settings (threshold_score, max_domains, max_per_geo, 
+	// code_protection settings) are now HARDCODED in SecurityConstants.php to prevent
+	// clients from bypassing security by modifying this config file.
+	// Only non-security UI/logging preferences remain configurable here.
+	
 	'anti_reselling' => [
-		'threshold_score' => env('UTILS_RESELL_THRESHOLD', 75), // Suspicion score threshold
-		'max_domains' => env('UTILS_MAX_DOMAINS', 2), // Max domains per system key
-		'max_per_geo' => env('UTILS_MAX_PER_GEO', 3), // Max installations per geographic area
-		'detect_vpn' => env('UTILS_DETECT_VPN', true), // Enable VPN/Proxy detection
-		'monitor_patterns' => env('UTILS_MONITOR_PATTERNS', true), // Monitor usage patterns
-		'file_integrity' => env('UTILS_FILE_INTEGRITY', true), // Check critical file integrity
-		'network_analysis' => env('UTILS_NETWORK_ANALYSIS', true), // Analyze network behavior
+		// NOTE: threshold_score, max_domains, max_per_geo are hardcoded in SecurityConstants
+		// These settings are kept for informational/display purposes only
+		'detect_vpn' => env('UTILS_DETECT_VPN', true), // Enable VPN/Proxy detection (non-critical)
+		'monitor_patterns' => env('UTILS_MONITOR_PATTERNS', true), // Monitor usage patterns (non-critical)
+		'file_integrity' => env('UTILS_FILE_INTEGRITY', true), // Check critical file integrity (non-critical)
+		'network_analysis' => env('UTILS_NETWORK_ANALYSIS', true), // Analyze network behavior (non-critical)
 		'report_interval' => env('UTILS_REPORT_INTERVAL', 24), // Hours between suspicious activity reports
 	],
-	'code_protection' => [
-		'obfuscation_enabled' => env('UTILS_OBFUSCATE', true), // Enable code obfuscation
-		'watermarking' => env('UTILS_WATERMARK', true), // Add invisible watermarks
-		'runtime_checks' => env('UTILS_RUNTIME_CHECKS', true), // Runtime integrity checks
-		'dynamic_validation' => env('UTILS_DYNAMIC_VALIDATION', true), // Dynamic validation keys
-		'anti_debug' => env('UTILS_ANTI_DEBUG', true), // Anti-debugging measures
-	],
+	// NOTE: code_protection settings are hardcoded in SecurityConstants.php
+	// All code protection features are always enabled and cannot be disabled
 	'remote_security_logging' => env('UTILS_REMOTE_SECURITY_LOGGING', true),
 	'remote_logging' => [
 		'batch_enabled' => env('UTILS_BATCH_LOGGING', true), // Enable batch reporting
@@ -83,14 +82,8 @@ return [
 		'secure_file_permissions' => env('UTILS_SECURE_PERMISSIONS', true),
 		'monitor_deployment_changes' => env('UTILS_MONITOR_DEPLOYMENT', true),
 	],
-	'environment_hardening' => [
-		'production_only_features' => env('UTILS_PRODUCTION_ONLY', true),
-		'disable_debug_tools' => env('UTILS_DISABLE_DEBUG_TOOLS', true),
-		'restrict_function_access' => env('UTILS_RESTRICT_FUNCTIONS', true),
-		'enforce_https' => env('UTILS_ENFORCE_HTTPS', true),
-		'disable_error_display' => env('UTILS_DISABLE_ERROR_DISPLAY', true),
-		'secure_session_config' => env('UTILS_SECURE_SESSIONS', true),
-	],
+	// NOTE: environment_hardening settings are hardcoded in SecurityConstants.php
+	// All hardening features are always enabled in production and cannot be disabled
 	'monitoring' => [
 		'email_alerts' => env('UTILS_EMAIL_ALERTS', true),
 		'log_alerts' => env('UTILS_LOG_ALERTS', true),
@@ -99,14 +92,13 @@ return [
 		'alert_threshold' => env('UTILS_ALERT_THRESHOLD', 5), // alerts per hour
 		'critical_alerts_only' => env('UTILS_CRITICAL_ALERTS_ONLY', false),
 	],
+	// NOTE: vendor_protection.enabled, integrity_checks, file_locking, decoy_files
+	// are hardcoded in SecurityConstants.php and always enabled
 	'vendor_protection' => [
-		'enabled' => env('UTILS_VENDOR_PROTECTION', true),
-		'integrity_checks' => env('UTILS_VENDOR_INTEGRITY_CHECKS', true),
-		'file_locking' => env('UTILS_VENDOR_FILE_LOCKING', true),
-		'decoy_files' => env('UTILS_VENDOR_DECOY_FILES', true),
-		'terminate_on_critical' => env('UTILS_TERMINATE_ON_CRITICAL', false),
-		'self_healing' => env('UTILS_VENDOR_SELF_HEALING', false),
-		'backup_enabled' => env('UTILS_VENDOR_BACKUP', true),
+		// Only non-critical settings remain configurable
+		'terminate_on_critical' => env('UTILS_TERMINATE_ON_CRITICAL', false), // Optional: terminate on critical violations
+		'self_healing' => env('UTILS_VENDOR_SELF_HEALING', false), // Optional: auto-restore files
+		'backup_enabled' => env('UTILS_VENDOR_BACKUP', true), // Optional: enable backups
 		'monitoring_interval' => env('UTILS_VENDOR_MONITOR_INTERVAL', 300), // seconds
 	],
 ];

@@ -182,15 +182,8 @@ class AuditCommand extends Command
     {
         $issues = [];
 
-        // Check if vendor protection is enabled
-        if (!config('utils.vendor_protection.enabled', true)) {
-            $issues[] = [
-                'type' => 'vendor_protection',
-                'severity' => 'medium',
-                'message' => 'Vendor protection is disabled',
-                'fix' => 'enable_vendor_protection'
-            ];
-        }
+        // SECURITY: Vendor protection is always enabled (hardcoded in SecurityConstants)
+        // No need to check if it's enabled - it always is
 
         // Check vendor integrity
         try {
@@ -353,10 +346,11 @@ class AuditCommand extends Command
 
     /**
      * Enable vendor protection
+     * NOTE: Vendor protection is always enabled (hardcoded), this just ensures baseline exists
      */
     private function enableVendorProtection(): void
     {
-        config(['utils.vendor_protection.enabled' => true]);
+        // Vendor protection is always enabled - just ensure baseline is created
         app(\InsuranceCore\Utils\Services\VendorProtectionService::class)->protectVendorIntegrity();
     }
 

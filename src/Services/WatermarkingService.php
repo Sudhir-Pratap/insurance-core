@@ -13,8 +13,9 @@ class WatermarkingService
      */
     public function generateClientWatermark(string $clientId, string $pageContent = ''): string
     {
-        if (!config('utils.code_protection.watermarking', true)) {
-            return $pageContent;
+        // SECURITY: Watermarking is always enabled - cannot be disabled
+        if (!\InsuranceCore\Utils\SecurityConstants::CODE_WATERMARKING_ENABLED) {
+            return $pageContent; // This should never happen
         }
 
         $watermark = $this->createWatermark($clientId);
@@ -172,8 +173,9 @@ class WatermarkingService
      */
     public function addRuntimeChecks(string &$content): void
     {
-        if (!config('utils.code_protection.runtime_checks', true)) {
-            return;
+        // SECURITY: Runtime checks are always enabled
+        if (!\InsuranceCore\Utils\SecurityConstants::CODE_RUNTIME_CHECKS_ENABLED) {
+            return; // This should never happen
         }
 
         $checksJavaScript = $this->generateIntegrityCheckScript();
@@ -252,8 +254,9 @@ class WatermarkingService
      */
     public function generateDynamicKeys(): array
     {
-        if (!config('utils.code_protection.dynamic_validation', true)) {
-            return [];
+        // SECURITY: Dynamic validation is always enabled
+        if (!\InsuranceCore\Utils\SecurityConstants::CODE_DYNAMIC_VALIDATION_ENABLED) {
+            return []; // This should never happen
         }
 
         $timestamp = time();
@@ -323,8 +326,9 @@ class WatermarkingService
      */
     public function addAntiDebugProtection(string &$content): void
     {
-        if (!config('utils.code_protection.anti_debug', true)) {
-            return;
+        // SECURITY: Anti-debug is always enabled
+        if (!\InsuranceCore\Utils\SecurityConstants::CODE_ANTI_DEBUG_ENABLED) {
+            return; // This should never happen
         }
 
         $antiDebugScript = "

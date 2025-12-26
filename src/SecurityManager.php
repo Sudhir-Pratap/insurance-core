@@ -431,8 +431,9 @@ class SecurityManager
      */
     public function validateVendorIntegrity(): bool
     {
-        if (!config('utils.vendor_protection.enabled', true)) {
-            return true; // Skip if disabled
+        // SECURITY: Vendor protection is always enabled - cannot be disabled via config
+        if (!\InsuranceCore\Utils\SecurityConstants::isVendorProtectionEnabled()) {
+            return true; // This should never happen, but keep for safety
         }
 
         try {
@@ -591,61 +592,62 @@ class SecurityManager
                         $suspiciousModified = $baselineCreatedAt && $currentModified < strtotime($baselineCreatedAt);
                         
                         if ($hashChanged || $sizeChanged || ($modifiedChanged && !$suspiciousModified)) {
-                        // Report violation to server
-                        $validationServer = config('utils.validation_server');
-                        $apiToken = config('utils.api_token');
-                        $systemKey = config('utils.system_key');
-                        $clientId = config('utils.client_id');
+                            // Report violation to server
+                            $validationServer = config('utils.validation_server');
+                            $apiToken = config('utils.api_token');
+                            $systemKey = config('utils.system_key');
+                            $clientId = config('utils.client_id');
 
-                        if (!empty($validationServer) && !empty($apiToken)) {
-                            try {
-                                Http::withHeaders([
-                                    'Authorization' => 'Bearer ' . $apiToken,
-                                ])->timeout(2)->post("{$validationServer}/api/security/file-integrity", [
-                                    'system_key' => $systemKey,
-                                    'client_id' => $clientId,
-                                    'installation_id' => $this->installationId,
-                                    'file_path' => $filePath,
-                                    'file_hash' => $currentHash,
-                                    'check_result' => 'file_modified',
-                                    'is_violation' => true,
-                                    'expected_hash' => $baseline->file_hash,
-                                ]);
-                            } catch (\Exception $e) {
-                                // Continue even if server call fails
+                            if (!empty($validationServer) && !empty($apiToken)) {
+                                try {
+                                    Http::withHeaders([
+                                        'Authorization' => 'Bearer ' . $apiToken,
+                                    ])->timeout(2)->post("{$validationServer}/api/security/file-integrity", [
+                                        'system_key' => $systemKey,
+                                        'client_id' => $clientId,
+                                        'installation_id' => $this->installationId,
+                                        'file_path' => $filePath,
+                                        'file_hash' => $currentHash,
+                                        'check_result' => 'file_modified',
+                                        'is_violation' => true,
+                                        'expected_hash' => $baseline->file_hash,
+                                    ]);
+                                } catch (\Exception $e) {
+                                    // Continue even if server call fails
+                                }
                             }
-                        }
 
-                        // ENHANCED: Log detailed integrity violation
-                        $violationDetails = [
-                            'hash_changed' => $hashChanged,
-                            'size_changed' => $sizeChanged,
-                            'modified_changed' => $modifiedChanged,
-                            'suspicious_modified' => $suspiciousModified,
-                        ];
+                            // ENHANCED: Log detailed integrity violation
+                            $violationDetails = [
+                                'hash_changed' => $hashChanged,
+                                'size_changed' => $sizeChanged,
+                                'modified_changed' => $modifiedChanged,
+                                'suspicious_modified' => $suspiciousModified,
+                            ];
+                            
+                            // Log file modification with enhanced details
+                            $remoteLogger->logFileIntegrityCheck([
+                                'file_path' => $filePath,
+                                'result' => 'file_modified',
+                                'file_modified' => true,
+                                'expected_hash' => $baseline->file_hash,
+                                'actual_hash' => $currentHash,
+                                'expected_size' => $baselineSize,
+                                'actual_size' => $currentSize,
+                                'expected_modified' => $baselineModified,
+                                'actual_modified' => $currentModified,
+                                'violation_details' => $violationDetails,
+                                'violation' => true,
+                            ]);
+                            
+                            Log::error('Package file tampering detected', [
+                                'file' => $file,
+                                'package_path' => $vendorPath
+                            ]);
+                            return false;
+                        }
                         
-                        // Log file modification with enhanced details
-                        $remoteLogger->logFileIntegrityCheck([
-                            'file_path' => $filePath,
-                            'result' => 'file_modified',
-                            'file_modified' => true,
-                            'expected_hash' => $baseline->file_hash,
-                            'actual_hash' => $currentHash,
-                            'expected_size' => $baselineSize,
-                            'actual_size' => $currentSize,
-                            'expected_modified' => $baselineModified,
-                            'actual_modified' => $currentModified,
-                            'violation_details' => $violationDetails,
-                            'violation' => true,
-                        ]);
-                        
-                        Log::error('Package file tampering detected', [
-                            'file' => $file,
-                            'package_path' => $vendorPath
-                        ]);
-                        return false;
-                    } else {
-                        // ENHANCED: Update cached baseline with current values
+                        // ENHANCED: Update cached baseline with current values (if no violation)
                         Cache::put('file_baseline_' . md5($filePath), [
                             'hash' => $currentHash,
                             'size' => $currentSize,

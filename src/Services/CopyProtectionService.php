@@ -29,7 +29,8 @@ class CopyProtectionService
 
         // ENHANCED: Use weighted scoring algorithm with time-decay
         $score = $this->calculateWeightedSuspiciousScore($suspiciousIndicators, $context);
-        $threshold = config('utils.anti_reselling.threshold_score', 75);
+        // SECURITY: Threshold is hardcoded - cannot be modified by clients
+        $threshold = \InsuranceCore\Utils\SecurityConstants::getResellingThreshold();
 
         if ($score >= $threshold) {
             $this->handlePotentiallySuspiciousActivity($suspiciousIndicators, $score);
@@ -134,7 +135,8 @@ class CopyProtectionService
         $allDomains = $this->getMultiLayerDomainTracking();
         
         $currentDomain = request()->getHost();
-        $maxAllowed = config('utils.anti_reselling.max_domains', 2);
+        // SECURITY: Max domains is hardcoded - cannot be modified by clients
+        $maxAllowed = \InsuranceCore\Utils\SecurityConstants::getMaxDomainsPerKey();
         
         // Check if current domain exceeds limit across all tracking methods
         if (count($allDomains) > $maxAllowed) {
@@ -439,7 +441,8 @@ class CopyProtectionService
         }
 
         // Too many installations in same geographic area
-        $maxAllowedInCluster = config('utils.anti_reselling.max_per_geo', 3);
+        // SECURITY: Max per geo is hardcoded - cannot be modified by clients
+        $maxAllowedInCluster = \InsuranceCore\Utils\SecurityConstants::getMaxInstallationsPerGeo();
         if (count($installations) > $maxAllowedInCluster) {
             return 35; // Suspicious clustering
         }

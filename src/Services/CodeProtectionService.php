@@ -15,8 +15,10 @@ class CodeProtectionService
      */
     public function applyProtection(): void
     {
-        if (!config('utils.code_protection.obfuscation_enabled', true)) {
-            return;
+        // SECURITY: Code protection is always enabled - cannot be disabled
+        // Config check kept for backward compatibility but always returns true
+        if (!\InsuranceCore\Utils\SecurityConstants::CODE_OBFUSCATION_ENABLED) {
+            return; // This should never happen
         }
 
         $this->obfuscateCriticalFunctions();
