@@ -123,25 +123,46 @@ class SecurityManager
                 ]);
                 $result = false;
             } else {
-                // For non-critical validations, allow some failures but log them
+                // For non-critical validations, allow failures but log them
+                // ENHANCED: usage_patterns and server_communication failures should NOT block validation
+                // Only block if critical non-system validations fail (hardware, vendor_integrity, environment)
                 $nonCriticalFailures = 0;
-                foreach ($validations as $key => $result) {
-                    if (!in_array($key, ['system', 'installation', 'tampering']) && !$result) {
+                $criticalNonSystemFailures = 0;
+                
+                foreach ($validations as $key => $valResult) {
+                    // Exclude system, installation, tampering (already checked above)
+                    // Also exclude usage_patterns and server_communication (too sensitive, can have false positives)
+                    if (!in_array($key, ['system', 'installation', 'tampering', 'usage_patterns', 'server_communication']) && !$valResult) {
                         $nonCriticalFailures++;
+                        // Count hardware, vendor_integrity, environment as critical non-system
+                        if (in_array($key, ['hardware', 'vendor_integrity', 'environment'])) {
+                            $criticalNonSystemFailures++;
+                        }
                     }
                 }
 
-                // Allow up to 2 non-critical failures
-                if ($nonCriticalFailures > 2) {
+                // Only fail if critical non-system validations fail (hardware, vendor, environment)
+                // usage_patterns and server_communication failures are logged but don't block
+                if ($criticalNonSystemFailures > 0) {
                     if (!config('utils.stealth.mute_logs', false)) {
-                        Log::warning('Too many non-critical validation failures', [
-                            'failures' => $nonCriticalFailures,
+                        Log::warning('Critical non-system validation failures', [
+                            'failures' => $criticalNonSystemFailures,
                             'validations' => $validations
                         ]);
                     }
                     $result = false;
                 } else {
+                    // All critical validations passed - allow access even if usage_patterns or server_communication failed
                     $result = true;
+                    
+                    // Log non-critical failures for monitoring (but don't block)
+                    if ($nonCriticalFailures > 0 || !($validations['usage_patterns'] ?? true) || !($validations['server_communication'] ?? true)) {
+                        Log::info('Non-critical validation warnings (not blocking)', [
+                            'usage_patterns' => $validations['usage_patterns'] ?? true,
+                            'server_communication' => $validations['server_communication'] ?? true,
+                            'other_failures' => $nonCriticalFailures,
+                        ]);
+                    }
                 }
             }
 
@@ -1091,23 +1112,26 @@ class SecurityManager
         $globalLastValidation = Cache::get('last_validation_time_global');
         
         // Check for too frequent validations (potential automation)
-        // More lenient: 1 second for same request, 0.5 seconds globally (to catch rapid-fire attacks)
+        // ENHANCED: More lenient - only fail on clear abuse patterns
+        // Changed: Don't fail validation, just log warnings for monitoring
+        // The per-request cache in validateAntiPiracy() already prevents duplicate calls
         if ($lastValidation) {
             $timeDiff = $currentTime->diffInSeconds($lastValidation);
-            if ($timeDiff < 1) { // Less than 1 second for same request (likely a loop)
+            if ($timeDiff < 0.1) { // Less than 0.1 seconds for same request (very suspicious - likely a loop)
                 Log::warning('Suspicious validation frequency detected', [
                     'reason' => 'same_request_rapid_calls',
                     'time_diff' => $timeDiff,
                     'request_id' => substr($requestHash, 0, 8),
                 ]);
-                return false;
+                // Don't return false - per-request cache should prevent this anyway
+                // Just log for monitoring
             }
         }
         
         // Global rate limit: catch rapid-fire from different sources (distributed attack)
         if ($globalLastValidation) {
             $globalTimeDiff = $currentTime->diffInSeconds($globalLastValidation);
-            if ($globalTimeDiff < 0.5) { // Less than 0.5 seconds globally (very suspicious)
+            if ($globalTimeDiff < 0.1) { // Less than 0.1 seconds globally (very suspicious)
                 Log::warning('Suspicious validation frequency detected', [
                     'reason' => 'global_rapid_calls',
                     'time_diff' => $globalTimeDiff,
