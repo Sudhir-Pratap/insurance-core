@@ -851,48 +851,93 @@ class RewardHelper
             Log::info ( 'Assign reward point error line: ' . $e->getLine () );
         }
     }
-    public static function mmv_api_call( $apiUrl, $method )
+    /**
+     * Call MMV API using cURL.
+     * GET: pass full URL with query string.
+     * POST: pass full URL with query string OR base URL + $postData. If URL contains "?", query is moved to body to avoid 414 URI Too Long.
+     *
+     * @param string $apiUrl Full URL (for GET include query string; for POST can include query – it will be moved to body).
+     * @param string $method GET or POST.
+     * @param array|string|null $postData Optional. For POST: array of params (sent as form-urlencoded) or already-encoded string.
+     */
+    public static function mmv_api_call( $apiUrl, $method, $postData = null )
     {
         try
         {
+            $requestUrl = $apiUrl;
+            $body = null;
+
+            if ( strtoupper ( $method ) === 'POST' )
+            {
+                if ( $postData !== null && $postData !== [] )
+                {
+                    $body = is_array ( $postData ) ? http_build_query ( $postData ) : (string) $postData;
+                }
+                elseif ( strpos ( $apiUrl, '?' ) !== false )
+                {
+                    list( $requestUrl, $body ) = explode ( '?', $apiUrl, 2 );
+                }
+            }
+
             $ch = curl_init ();
-            curl_setopt_array ( $ch, [ 
-                CURLOPT_URL => $apiUrl,
+            $opts = [
+                CURLOPT_URL => $requestUrl,
                 CURLOPT_RETURNTRANSFER => true,
                 CURLOPT_ENCODING => "",
                 CURLOPT_MAXREDIRS => 10,
                 CURLOPT_TIMEOUT => 60,
                 CURLOPT_FOLLOWLOCATION => true,
                 CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
-                CURLOPT_CUSTOMREQUEST => $method,
-                CURLOPT_HTTPHEADER => [ "Content-Type: application/json" ],
-            ] );
+                CURLOPT_CUSTOMREQUEST => strtoupper ( $method ),
+            ];
+
+            if ( $body !== null )
+            {
+                $opts[ CURLOPT_POSTFIELDS ] = $body;
+                $opts[ CURLOPT_HTTPHEADER ] = [ "Content-Type: application/x-www-form-urlencoded" ];
+            }
+            else
+            {
+                $opts[ CURLOPT_HTTPHEADER ] = [ "Content-Type: application/json" ];
+            }
+
+            curl_setopt_array ( $ch, $opts );
             $response = curl_exec ( $ch );
             $httpCode = curl_getinfo ( $ch, CURLINFO_HTTP_CODE );
+            $curlError = curl_error ( $ch );
             curl_close ( $ch );
-            $responseArray = json_decode ( $response, true );
+
+            $responseArray = is_string ( $response ) ? json_decode ( $response, true ) : null;
+
+            if ( $curlError )
+            {
+                return [ "status" => false, "data" => [], "message" => "MMV API connection error: " . $curlError ];
+            }
+
             if ( $httpCode == 200 )
             {
-                return [ 
-                    "status" => true,
-                    "data" => $responseArray[ "data" ],
-                    "message" => "Success",
-                ];
-            } else
-            {
-                return [ 
-                    "status" => false,
-                    "data" => [],
-                    "message" => $responseArray[ "message" ] ?? 'Unknown error',
-                ];
+                $data = ( is_array ( $responseArray ) && isset ( $responseArray[ "data" ] ) ) ? $responseArray[ "data" ] : [];
+                return [ "status" => true, "data" => $data, "message" => "Success" ];
             }
-        } catch ( Exception $e )
+
+            $message = null;
+            if ( is_array ( $responseArray ) )
+            {
+                $message = $responseArray[ "message" ] ?? $responseArray[ "error" ] ?? $responseArray[ "msg" ] ?? null;
+            }
+            if ( $message === null && is_string ( $response ) && strlen ( $response ) > 0 && strlen ( $response ) < 500 )
+            {
+                $message = "MMV API response: " . $response;
+            }
+            if ( $message === null )
+            {
+                $message = "MMV API returned HTTP " . $httpCode;
+            }
+            return [ "status" => false, "data" => [], "message" => $message ];
+        }
+        catch ( Exception $e )
         {
-            return [ 
-                "status" => false,
-                "data" => [],
-                "message" => $e->getMessage (),
-            ];
+            return [ "status" => false, "data" => [], "message" => $e->getMessage () ];
         }
     }
     public static function getMmvById( $objectId )
