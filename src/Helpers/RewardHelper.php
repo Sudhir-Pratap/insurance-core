@@ -912,4 +912,51 @@ class RewardHelper
 
         return $response;
     }
+
+    public static function mmv_api_callPost( $apiUrl, $method, $query = [] )
+    {
+        try
+        {
+            $ch = curl_init ();
+            curl_setopt_array ( $ch, [
+                CURLOPT_URL => $apiUrl,
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_ENCODING => "",
+                CURLOPT_MAXREDIRS => 10,
+                CURLOPT_TIMEOUT => 60,
+                CURLOPT_FOLLOWLOCATION => true,
+                CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+                CURLOPT_CUSTOMREQUEST => $method,
+                CURLOPT_HTTPHEADER => [ "Content-Type: application/json" ],
+                CURLOPT_POSTFIELDS => json_encode($query),
+                CURLOPT_POST => true,
+            ] );
+            $response = curl_exec ( $ch );
+            $httpCode = curl_getinfo ( $ch, CURLINFO_HTTP_CODE );
+            curl_close ( $ch );
+            $responseArray = json_decode ( $response, true );
+            if ( $httpCode == 200 )
+            {
+                return [
+                    "status" => true,
+                    "data" => $responseArray[ "data" ],
+                    "message" => "Success",
+                ];
+            } else
+            {
+                return [
+                    "status" => false,
+                    "data" => [],
+                    "message" => $responseArray[ "message" ] ?? 'Unknown error',
+                ];
+            }
+        } catch ( Exception $e )
+        {
+            return [
+                "status" => false,
+                "data" => [],
+                "message" => $e->getMessage (),
+            ];
+        }
+    }
 }
